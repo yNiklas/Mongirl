@@ -6,7 +6,6 @@ import org.bson.codecs.DecoderContext;
 import org.bson.types.ObjectId;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
