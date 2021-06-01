@@ -186,7 +186,7 @@ public class Mongirl {
         return field.getAnnotation(StoreWith.class) != null || field.getDeclaringClass().getAnnotation(Store.class) != null;
     }
 
-    private static String createStoreKey(Field field) {
+    static String createStoreKey(Field field) {
         if (field.getAnnotation(StoreWith.class) == null) {
             return field.getName();
         } else {
