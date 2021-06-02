@@ -7,6 +7,6 @@ import static org.junit.jupiter.api.Assertions.*;
 public class MongirlTests {
     @Test
     public void testInsertOne() {
-        System.out.println(new Mongirl("localhost", 27017, "test").store(new ExampleStore("example")));
+        System.out.println(new Mongirl("localhost", 27017, "test").store(new ExampleStore("example1")));
     }
 }

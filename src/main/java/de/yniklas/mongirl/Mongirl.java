@@ -79,6 +79,7 @@ public class Mongirl {
 
         Set<Bson> equalityRequirements = new HashSet<>();
         for (Field field : storageObject.getClass().getDeclaredFields()) {
+            field.trySetAccessible();
             if (field.getAnnotation(StoreWith.class) != null
                     && field.getAnnotation(StoreWith.class).equalityRequirement()) {
                 try {
@@ -91,11 +92,11 @@ public class Mongirl {
 
         MongoCollection<Document> collection = DB.getCollection(storageObject.getClass().getAnnotation(Store.class).collection());
 
-        // Update document, if found
-        Document updated = collection.findOneAndUpdate(Filters.and(equalityRequirements), document);
+        // Replace document, if found (updateOneAndReplace didn't work here!)
+        Document updated = collection.findOneAndReplace(Filters.and(equalityRequirements), document);
 
         if (updated == null) {
-            // Document wasn't updated since there is no such document
+            // Document wasn't replaced since there is no such document
             return collection.insertOne(document).getInsertedId();
         } else {
             return updated.getObjectId("_id");

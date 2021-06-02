@@ -11,7 +11,7 @@ public class ExampleStore {
     int value = 5;
 
     @StoreWith(key = "x2")
-    String x = "2";
+    String x = "02052021/2";
 
     ExampleSubObject subsub = new ExampleSubObject();
 
