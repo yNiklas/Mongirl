@@ -18,4 +18,9 @@ public @interface StoreWith {
      * attributes with this boolean set will inspected.
      */
     boolean equalityRequirement() default false;
+
+    /**
+     * Indicates whether a field is part of the constructor.
+     */
+    boolean constructive() default false;
 }

@@ -75,4 +75,9 @@ public class ConstructorPair {
             reader.readEndArray();
         }
     }
+
+    public ConstructorPair(Class<?> clazz, Object value) {
+        this.constructorParameterClass = clazz;
+        this.value = value;
+    }
 }

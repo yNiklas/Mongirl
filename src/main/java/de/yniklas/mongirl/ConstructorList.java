@@ -14,10 +14,10 @@ public class ConstructorList {
         this.pairs.add(pair);
     }
 
-    public Class[] getConstructorClasses() {
-        Class[] classes = new Class[pairs.size()];
+    public Class<?>[] getConstructorClasses() {
+        Class<?>[] classes = new Class[pairs.size()];
         for (int i = 0; i < pairs.size(); i++) {
-            classes[i] = pairs.get(i).getClass();
+            classes[i] = pairs.get(i).constructorParameterClass;
         }
         return classes;
     }

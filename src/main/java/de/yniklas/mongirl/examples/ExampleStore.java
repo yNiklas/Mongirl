@@ -5,7 +5,7 @@ import de.yniklas.mongirl.StoreWith;
 
 @Store(collection = "collection")
 public class ExampleStore {
-    @StoreWith(key = "customId", equalityRequirement = true)
+    @StoreWith(key = "customId", equalityRequirement = true, constructive = true)
     private String superSuperIdentifier;
 
     int value = 5;

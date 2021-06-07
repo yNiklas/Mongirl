@@ -3,15 +3,12 @@ package de.yniklas.mongirl;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCredential;
 import com.mongodb.ServerAddress;
-import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
-import com.mongodb.client.result.InsertOneResult;
 import org.bson.BsonReader;
-import org.bson.BsonValue;
 import org.bson.BsonWriter;
 import org.bson.Document;
 import org.bson.codecs.DecoderContext;
@@ -77,18 +74,8 @@ public class Mongirl {
             }
         }
 
-        Set<Bson> equalityRequirements = new HashSet<>();
-        for (Field field : storageObject.getClass().getDeclaredFields()) {
-            field.trySetAccessible();
-            if (field.getAnnotation(StoreWith.class) != null
-                    && field.getAnnotation(StoreWith.class).equalityRequirement()) {
-                try {
-                    equalityRequirements.add(Filters.eq(createStoreKey(field), field.get(storageObject)));
-                } catch (IllegalAccessException e) {
-                    illegalAccess(e, field);
-                }
-            }
-        }
+        // Collect all fields important for the equality check
+        Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
 
         MongoCollection<Document> collection = DB.getCollection(storageObject.getClass().getAnnotation(Store.class).collection());
 
@@ -103,6 +90,41 @@ public class Mongirl {
         }
     }
 
+    public <T> Set<T> decodeAll(Class<T> targetClass) {
+        if (targetClass.getAnnotation(Store.class) == null) {
+            return null;
+        }
+
+        Set<T> decodedObjects = new HashSet<>();
+
+        Set<Pair> searchKeys = new HashSet<>();
+
+        for (Field field : targetClass.getDeclaredFields()) {
+            field.trySetAccessible();
+            if (field.getAnnotation(StoreWith.class) != null
+                    && field.getAnnotation(StoreWith.class).constructive()) {
+                searchKeys.add(new Pair(createStoreKey(field), field.getType()));
+            }
+        }
+
+        MongoCollection<Document> collection = DB.getCollection(targetClass.getAnnotation(Store.class).collection());
+        for (Document document : collection.find()) {
+            ConstructorList constructorList = new ConstructorList();
+            for (Pair searchKey : searchKeys) {
+                constructorList.addPair(new ConstructorPair(searchKey.clazz, document.get(searchKey.key)));
+            }
+
+            try {
+                decodedObjects.add(targetClass.getConstructor(constructorList.getConstructorClasses()).newInstance(constructorList.getConstructObjects()));
+            } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+                e.printStackTrace();
+            }
+        }
+
+        return decodedObjects;
+    }
+
+
     private boolean isMongoPrimitive(Class<?> clazz) {
         return clazz.isPrimitive()
                 || clazz.equals(String.class)
@@ -115,6 +137,22 @@ public class Mongirl {
                 || clazz.equals(Double.class)
                 || clazz.equals(List.class)
                 || clazz.equals(Set.class);
+    }
+
+    private static Set<Bson> createEqualityRequirementsSet(Object storageObject) {
+        Set<Bson> equalityRequirements = new HashSet<>();
+        for (Field field : storageObject.getClass().getDeclaredFields()) {
+            field.trySetAccessible();
+            if (field.getAnnotation(StoreWith.class) != null
+                    && field.getAnnotation(StoreWith.class).equalityRequirement()) {
+                try {
+                    equalityRequirements.add(Filters.eq(createStoreKey(field), field.get(storageObject)));
+                } catch (IllegalAccessException e) {
+                    illegalAccess(e, field);
+                }
+            }
+        }
+        return equalityRequirements;
     }
 
     public static void encode(Object toEncode, BsonWriter writer, EncoderContext encoderContext) {
