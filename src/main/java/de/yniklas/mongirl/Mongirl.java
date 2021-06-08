@@ -19,6 +19,8 @@ import org.bson.types.ObjectId;
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.ParameterizedType;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -53,7 +55,7 @@ public class Mongirl {
     }
 
     public Object store(Object storageObject) {
-        if (storageObject.getClass().getAnnotation(Store.class) == null) {
+        if (collection(storageObject.getClass()) == null) {
             return null;
         }
 
@@ -67,17 +69,29 @@ public class Mongirl {
                         document.append(createStoreKey(field), null);
                     } else if (isMongoPrimitive(field.get(storageObject).getClass())) {
                         document.append(createStoreKey(field), field.get(storageObject));
+                    } else if (field.isEnumConstant()) {
+                        document.append(createStoreKey(field), field.get(storageObject).toString());
+                    } else if (field.get(storageObject) instanceof Iterable) {
+                        List<Object> encoded = new ArrayList<>();
+                        ((List) field.get(storageObject)).forEach(item -> encoded.add(store(item)));
+                        document.append(createStoreKey(field), encoded);
                     } else {
                         document.append(createStoreKey(field), store(field.get(storageObject)));
                     }
-                } catch (IllegalAccessException ignored) { }
+                } catch (IllegalAccessException exception) {
+                    exception.printStackTrace();
+                }
             }
         }
 
         // Collect all fields important for the equality check
         Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
 
-        MongoCollection<Document> collection = DB.getCollection(storageObject.getClass().getAnnotation(Store.class).collection());
+        MongoCollection<Document> collection = DB.getCollection(collection(storageObject.getClass()));
+
+        if (equalityRequirements.size() == 0) {
+            return collection.insertOne(document).getInsertedId();
+        }
 
         // Replace document, if found (updateOneAndReplace didn't work here!)
         Document updated = collection.findOneAndReplace(Filters.and(equalityRequirements), document);
@@ -90,32 +104,26 @@ public class Mongirl {
         }
     }
 
-    public <T> Set<T> decodeAll(Class<T> targetClass) {
-        if (targetClass.getAnnotation(Store.class) == null) {
+    public <T> List<T> decodeAll(Class<T> targetClass) {
+        if (collection(targetClass) == null) {
             return null;
         }
 
-        Set<T> decodedObjects = new HashSet<>();
+        List<T> decodedObjects = new ArrayList<>();
 
-        Set<Pair> searchKeys = new HashSet<>();
-
-        for (Field field : targetClass.getDeclaredFields()) {
-            field.trySetAccessible();
-            if (field.getAnnotation(StoreWith.class) != null
-                    && field.getAnnotation(StoreWith.class).constructive()) {
-                searchKeys.add(new Pair(createStoreKey(field), field.getType()));
-            }
-        }
-
-        MongoCollection<Document> collection = DB.getCollection(targetClass.getAnnotation(Store.class).collection());
+        MongoCollection<Document> collection = DB.getCollection(collection(targetClass));
         for (Document document : collection.find()) {
-            ConstructorList constructorList = new ConstructorList();
-            for (Pair searchKey : searchKeys) {
-                constructorList.addPair(new ConstructorPair(searchKey.clazz, document.get(searchKey.key)));
-            }
-
             try {
-                decodedObjects.add(targetClass.getConstructor(constructorList.getConstructorClasses()).newInstance(constructorList.getConstructObjects()));
+                T emptyInstance = targetClass.getConstructor().newInstance();
+
+                for (Field field : targetClass.getDeclaredFields()) {
+                    field.trySetAccessible();
+                    if (isStored(field)) {
+                        defineFieldValue(document, emptyInstance, field);
+                    }
+                }
+
+                decodedObjects.add(emptyInstance);
             } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
                 e.printStackTrace();
             }
@@ -124,6 +132,85 @@ public class Mongirl {
         return decodedObjects;
     }
 
+    private <T> void defineFieldValue(Document document, T emptyInstance, Field field) throws IllegalAccessException {
+        Object currentInspectionObject = document.get(createStoreKey(field));
+
+        if (isMongoPrimitive(field.getType())) {
+            field.set(emptyInstance, currentInspectionObject);
+        } else if (currentInspectionObject instanceof ObjectId) {
+            field.set(emptyInstance, decodeTo(field.getType(), (ObjectId) currentInspectionObject));
+        } else if (currentInspectionObject instanceof Iterable) {
+            // List/Set/Array handling
+            if (currentInspectionObject instanceof List) {
+                List<Object> list = new ArrayList<>();
+
+                if (field.getGenericType() instanceof ParameterizedType) {
+                    ((List<Object>) currentInspectionObject).forEach(item -> {
+                        list.add(parse(item, (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0]));
+                    });
+                }
+
+                field.set(emptyInstance, list);
+            } else if (currentInspectionObject instanceof Set) {
+                Set<Object> set = new HashSet<>();
+
+                if (field.getGenericType() instanceof ParameterizedType) {
+                    ((List<Object>) currentInspectionObject).forEach(item -> {
+                        set.add(parse(item, (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0]));
+                    });
+                }
+
+                field.set(emptyInstance, set);
+            } else if (currentInspectionObject.getClass().isArray()) {
+                // todo: implement
+            }
+        }
+    }
+
+    public <T> T decodeTo(Class<T> targetClass, ObjectId _id) {
+        if (collection(targetClass) == null) {
+            return null;
+        }
+
+        MongoCollection<Document> collection = DB.getCollection(collection(targetClass));
+        Document foundDocument = collection.find(Filters.eq("_id", _id)).first();
+
+        if (foundDocument == null) {
+            return null;
+        }
+
+        try {
+            T emptyInstance = targetClass.getConstructor().newInstance();
+
+            // Reflect all stored attributes
+            for (Field field : targetClass.getDeclaredFields()) {
+                field.trySetAccessible();
+                if (isStored(field)) {
+                    defineFieldValue(foundDocument, emptyInstance, field);
+                }
+            }
+
+            return emptyInstance;
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private Object parse(Object inspection, Class<?> genericClass) {
+        if (isMongoPrimitive(inspection.getClass())) {
+            return inspection;
+        } else if (inspection instanceof ObjectId) {
+            return decodeTo(genericClass, (ObjectId) inspection);
+        } else if (inspection instanceof List) {
+            // todo: implement
+        } else if (inspection instanceof Set) {
+            // todo: implement
+        } else if (inspection.getClass().isArray()) {
+            // todo: implement
+        }
+        return null;
+    }
 
     private boolean isMongoPrimitive(Class<?> clazz) {
         return clazz.isPrimitive()
@@ -134,17 +221,14 @@ public class Mongirl {
                 || clazz.equals(Integer.class)
                 || clazz.equals(Long.class)
                 || clazz.equals(Float.class)
-                || clazz.equals(Double.class)
-                || clazz.equals(List.class)
-                || clazz.equals(Set.class);
+                || clazz.equals(Double.class);
     }
 
     private static Set<Bson> createEqualityRequirementsSet(Object storageObject) {
         Set<Bson> equalityRequirements = new HashSet<>();
         for (Field field : storageObject.getClass().getDeclaredFields()) {
             field.trySetAccessible();
-            if (field.getAnnotation(StoreWith.class) != null
-                    && field.getAnnotation(StoreWith.class).equalityRequirement()) {
+            if (isEqualRelevant(field)) {
                 try {
                     equalityRequirements.add(Filters.eq(createStoreKey(field), field.get(storageObject)));
                 } catch (IllegalAccessException e) {
@@ -222,7 +306,27 @@ public class Mongirl {
             return false;
         }
 
-        return field.getAnnotation(StoreWith.class) != null || field.getDeclaringClass().getAnnotation(Store.class) != null;
+        return field.getAnnotation(StoreWith.class) != null
+                || field.getDeclaringClass().getAnnotation(Dataclass.class) != null;
+    }
+
+    private static String collection(Class<?> clazz) {
+        if (clazz.getAnnotation(Store.class) == null
+                && clazz.getAnnotation(Dataclass.class) == null) {
+            return null;
+        }
+
+        if (clazz.getAnnotation(Store.class) != null) {
+            return clazz.getAnnotation(Store.class).collection();
+        } else {
+            return clazz.getAnnotation(Dataclass.class).collection();
+        }
+    }
+
+    private static boolean isEqualRelevant(Field field) {
+        return (field.getAnnotation(StoreWith.class) != null
+                && field.getAnnotation(StoreWith.class).equalityRequirement())
+                || field.getDeclaringClass().getAnnotation(Dataclass.class) != null;
     }
 
     static String createStoreKey(Field field) {

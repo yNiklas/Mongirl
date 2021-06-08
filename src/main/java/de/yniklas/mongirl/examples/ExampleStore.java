@@ -5,7 +5,7 @@ import de.yniklas.mongirl.StoreWith;
 
 @Store(collection = "collection")
 public class ExampleStore {
-    @StoreWith(key = "customId", equalityRequirement = true, constructive = true)
+    @StoreWith(key = "customId", equalityRequirement = true)
     private String superSuperIdentifier;
 
     int value = 5;
@@ -13,9 +13,16 @@ public class ExampleStore {
     @StoreWith(key = "x2")
     String x = "02052021/2";
 
+    @StoreWith
     ExampleSubObject subsub = new ExampleSubObject();
 
     public ExampleStore(String id) {
         this.superSuperIdentifier = id;
+    }
+
+    public ExampleStore(String superSuperIdentifier, String x, ExampleSubObject subsub) {
+        this.superSuperIdentifier = superSuperIdentifier;
+        this.x = x;
+        this.subsub = subsub;
     }
 }

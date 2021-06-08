@@ -1,17 +1,58 @@
+import com.mongodb.MongoClientSettings;
+import com.mongodb.ServerAddress;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
 import de.yniklas.mongirl.Mongirl;
-import de.yniklas.mongirl.examples.ExampleStore;
+import de.yniklas.mongirl.examples.ExampleDataclass;
+import de.yniklas.mongirl.examples.ExampleFolded;
+import org.bson.conversions.Bson;
+import org.bson.types.ObjectId;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class MongirlTests {
+    private static Mongirl testMongirl;
+    private static MongoDatabase DB;
+
+    @BeforeAll
+    public static void initDB() {
+        testMongirl = new Mongirl("localhost", 27017, "test");
+
+        MongoClientSettings settings = MongoClientSettings.builder()
+                .applyToClusterSettings(builder -> builder.hosts(Collections.singletonList(
+                        new ServerAddress("localhost", 27017)
+                ))).build();
+
+        MongoClient client = MongoClients.create(settings);
+        DB = client.getDatabase("test");
+    }
+
     @Test
     public void testInsertOne() {
-        System.out.println(new Mongirl("localhost", 27017, "test").store(new ExampleStore("example1")));
+        System.out.println(testMongirl.store(new ExampleFolded("1. test")));
     }
 
     @Test
     public void testDecode() {
-        System.out.println(new Mongirl("localhost", 27017, "test").decodeAll(ExampleStore.class));
+        System.out.println(testMongirl.decodeAll(ExampleFolded.class));
+    }
+
+    @Test
+    public void testFolded() {
+        Bson id = Filters.eq("_id", new ObjectId("60bfa25f2a7366644ff06f89"));
+        ExampleFolded folded = testMongirl.decodeTo(ExampleFolded.class, (ObjectId) DB.getCollection("folded").find(id).first().get("_id"));
+        assertEquals(folded.subs.get(1).haha, "soos");
+    }
+
+    @Test
+    public void testDataclass() {
+        testMongirl.store(new ExampleDataclass("auch dabei", 5));
+        assertEquals(testMongirl.decodeAll(ExampleDataclass.class).get(0).id, 5);
     }
 }

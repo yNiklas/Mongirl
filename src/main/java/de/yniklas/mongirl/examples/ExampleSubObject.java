@@ -6,5 +6,19 @@ import de.yniklas.mongirl.StoreWith;
 @Store(collection = "sub")
 public class ExampleSubObject {
     @StoreWith(equalityRequirement = true)
-    String haha = "muhaha";
+    public String haha = "muhaha2";
+
+    public ExampleSubObject() {
+    }
+
+    public ExampleSubObject(String haha) {
+        this.haha = haha;
+    }
+
+    @Override
+    public String toString() {
+        return "ExampleSubObject{" +
+                "haha='" + haha + '\'' +
+                '}';
+    }
 }
