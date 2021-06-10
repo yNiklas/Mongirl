@@ -7,7 +7,7 @@ import java.util.List;
 
 @Store(collection = "folded")
 public class ExampleFolded {
-    private static int id_counter = 12;
+    private static int id_counter = 28;
     @StoreWith(equalityRequirement = true) public String idd;
 
     @StoreWith public ExampleSubObject sub;

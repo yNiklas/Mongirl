@@ -59,6 +59,45 @@ public class Mongirl {
             return null;
         }
 
+        Document objAsDoc = createDocumentOf(storageObject);
+
+        // Collect all fields important for the equality check
+        Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
+
+        MongoCollection<Document> collection = DB.getCollection(collection(storageObject.getClass()));
+
+        if (equalityRequirements.size() == 0) {
+            return collection.insertOne(objAsDoc).getInsertedId();
+        }
+
+        // Replace document, if found (updateOneAndReplace didn't work here!)
+        Document updated = collection.findOneAndReplace(Filters.and(equalityRequirements), objAsDoc);
+
+        if (updated == null) {
+            // Document wasn't replaced since there is no such document
+            return collection.insertOne(objAsDoc).getInsertedId();
+        } else {
+            return updated.getObjectId("_id");
+        }
+    }
+
+    public ObjectId getObjectIdFrom(Object storageObject) {
+        Document objAsDoc = createDocumentOf(storageObject);
+
+        // Collect all fields important for the equality check
+        Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
+
+        if (equalityRequirements.size() == 0) {
+            return null;
+        }
+
+        MongoCollection<Document> collection = DB.getCollection(collection(storageObject.getClass()));
+        Document foundDoc = collection.find(objAsDoc).first();
+
+        return foundDoc != null ? foundDoc.getObjectId("_id") : null;
+    }
+
+    private Document createDocumentOf(Object storageObject) {
         Document document = new Document();
 
         for (Field field : storageObject.getClass().getDeclaredFields()) {
@@ -72,11 +111,17 @@ public class Mongirl {
                     } else if (field.isEnumConstant()) {
                         document.append(createStoreKey(field), field.get(storageObject).toString());
                     } else if (field.get(storageObject) instanceof Iterable) {
-                        List<Object> encoded = new ArrayList<>();
-                        ((List) field.get(storageObject)).forEach(item -> encoded.add(store(item)));
-                        document.append(createStoreKey(field), encoded);
+                        if (field.get(storageObject) instanceof List) {
+                            List<Object> encoded = new ArrayList<>();
+                            ((List) field.get(storageObject)).forEach(item -> encoded.add(store(item)));
+                            document.append(createStoreKey(field), encoded);
+                        } else if (field.get(storageObject) instanceof Set) {
+                            Set<Object> encoded = new HashSet<>();
+                            ((Set) field.get(storageObject)).forEach(item -> encoded.add(store(item)));
+                            document.append(createStoreKey(field), encoded);
+                        }
                     } else {
-                        document.append(createStoreKey(field), store(field.get(storageObject)));
+                        document.append(createStoreKey(field), createDocumentOf(field.get(storageObject)).getObjectId("_id"));
                     }
                 } catch (IllegalAccessException exception) {
                     exception.printStackTrace();
@@ -84,24 +129,39 @@ public class Mongirl {
             }
         }
 
-        // Collect all fields important for the equality check
-        Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
+        return document;
+    }
 
-        MongoCollection<Document> collection = DB.getCollection(collection(storageObject.getClass()));
-
-        if (equalityRequirements.size() == 0) {
-            return collection.insertOne(document).getInsertedId();
+    public <T> T decodeFromFilters(Class<T> targetClass, Pair... pairs) {
+        if (collection(targetClass) == null) {
+            return null;
         }
 
-        // Replace document, if found (updateOneAndReplace didn't work here!)
-        Document updated = collection.findOneAndReplace(Filters.and(equalityRequirements), document);
-
-        if (updated == null) {
-            // Document wasn't replaced since there is no such document
-            return collection.insertOne(document).getInsertedId();
-        } else {
-            return updated.getObjectId("_id");
+        if (pairs.length == 0) {
+            return decodeAll(targetClass).get(0);
         }
+
+        Set<Bson> filters = new HashSet<>();
+        for (Pair pair : pairs) {
+            if (isMongoPrimitive(pair.value.getClass()) || pair.value == null) {
+                filters.add(Filters.eq(pair.key, pair.value));
+            } else {
+                ObjectId subObjId = getObjectIdFrom(pair.value);
+                if (subObjId == null) {
+                    // Object isn't present in the database so cannot be the reference to the key
+                    return null;
+                } else {
+                    filters.add(Filters.eq(pair.key, subObjId));
+                }
+            }
+        }
+
+        Document foundDocument = DB.getCollection(collection(targetClass)).find(Filters.and(filters)).first();
+        if (foundDocument == null) {
+            return null;
+        }
+
+        return decodeTo(targetClass, foundDocument.getObjectId("_id"));
     }
 
     public <T> List<T> decodeAll(Class<T> targetClass) {
@@ -324,9 +384,13 @@ public class Mongirl {
     }
 
     private static boolean isEqualRelevant(Field field) {
+        if (!isStored(field)) {
+            return false;
+        }
+
         return (field.getAnnotation(StoreWith.class) != null
                 && field.getAnnotation(StoreWith.class).equalityRequirement())
-                || field.getDeclaringClass().getAnnotation(Dataclass.class) != null;
+                || field.getAnnotation(Dataclass.class) != null;
     }
 
     static String createStoreKey(Field field) {

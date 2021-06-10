@@ -5,8 +5,10 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import de.yniklas.mongirl.Mongirl;
+import de.yniklas.mongirl.Pair;
 import de.yniklas.mongirl.examples.ExampleDataclass;
 import de.yniklas.mongirl.examples.ExampleFolded;
+import de.yniklas.mongirl.examples.ExampleSubObject;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeAll;
@@ -35,7 +37,7 @@ public class MongirlTests {
 
     @Test
     public void testInsertOne() {
-        System.out.println(testMongirl.store(new ExampleFolded("1. test")));
+        System.out.println(testMongirl.store(new ExampleFolded("12. test")));
     }
 
     @Test
@@ -54,5 +56,12 @@ public class MongirlTests {
     public void testDataclass() {
         testMongirl.store(new ExampleDataclass("auch dabei", 5));
         assertEquals(testMongirl.decodeAll(ExampleDataclass.class).get(0).id, 5);
+    }
+
+    @Test
+    public void testDecodeFromFilters() {
+        int random = (int) (Math.random() * 1000);
+        testMongirl.store(new ExampleFolded(String.valueOf(random)));
+        System.out.println(testMongirl.decodeFromFilters(ExampleFolded.class, new Pair("idd", "27"), new Pair("sub", new ExampleSubObject("311"))));
     }
 }
