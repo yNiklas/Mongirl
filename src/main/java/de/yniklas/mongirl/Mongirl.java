@@ -30,6 +30,11 @@ public class Mongirl {
     private final MongoClient CLIENT;
     private final MongoDatabase DB;
 
+    /**
+     * Defines whether all attributes of a @Dataclass class are equality requirements.
+     */
+    private boolean dataClassAttributesAllEqual = true;
+
     public Mongirl(String host, int port, String dbName) {
         MongoClientSettings settings = MongoClientSettings.builder()
                 .applyToClusterSettings(builder -> builder.hosts(Collections.singletonList(
@@ -129,6 +134,16 @@ public class Mongirl {
             }
         }
 
+        Store storeAnn = storageObject.getClass().getAnnotation(Store.class);
+        if (storeAnn != null && storeAnn.addClasspath()) {
+            document.append("classpath", storageObject.getClass().getName());
+        } else {
+            Dataclass dataclassAnn = storageObject.getClass().getAnnotation(Dataclass.class);
+            if (dataclassAnn != null && dataclassAnn.addClasspath()) {
+                document.append("classpath", storageObject.getClass().getName());
+            }
+        }
+
         return document;
     }
 
@@ -173,20 +188,7 @@ public class Mongirl {
 
         MongoCollection<Document> collection = DB.getCollection(collection(targetClass));
         for (Document document : collection.find()) {
-            try {
-                T emptyInstance = targetClass.getConstructor().newInstance();
-
-                for (Field field : targetClass.getDeclaredFields()) {
-                    field.trySetAccessible();
-                    if (isStored(field)) {
-                        defineFieldValue(document, emptyInstance, field);
-                    }
-                }
-
-                decodedObjects.add(emptyInstance);
-            } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
-                e.printStackTrace();
-            }
+            decodedObjects.add(create(targetClass, document));
         }
 
         return decodedObjects;
@@ -239,19 +241,29 @@ public class Mongirl {
             return null;
         }
 
+        return create(targetClass, foundDocument);
+    }
+
+    private <T> T create(Class<T> targetClass, Document document) {
+        System.out.println("Targetting " + targetClass + " for " + document);
         try {
-            T emptyInstance = targetClass.getConstructor().newInstance();
+            T emptyInstance;
+            if (document.get("classpath") != null) {
+                emptyInstance = (T) Class.forName((String) document.get("classpath")).getConstructor().newInstance();
+            } else {
+                emptyInstance = targetClass.getConstructor().newInstance();
+            }
 
             // Reflect all stored attributes
             for (Field field : targetClass.getDeclaredFields()) {
                 field.trySetAccessible();
                 if (isStored(field)) {
-                    defineFieldValue(foundDocument, emptyInstance, field);
+                    defineFieldValue(document, emptyInstance, field);
                 }
             }
 
             return emptyInstance;
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException | ClassNotFoundException e) {
             e.printStackTrace();
             return null;
         }
@@ -263,9 +275,13 @@ public class Mongirl {
         } else if (inspection instanceof ObjectId) {
             return decodeTo(genericClass, (ObjectId) inspection);
         } else if (inspection instanceof List) {
-            // todo: implement
+            List<Object> list = new ArrayList<>();
+            ((List<Object>) inspection).forEach(item -> list.add(parse(item, item.getClass())));
+            return list;
         } else if (inspection instanceof Set) {
-            // todo: implement
+            Set<Object> set = new HashSet<>();
+            ((Set<Object>) inspection).forEach(item -> set.add(parse(item, item.getClass())));
+            return set;
         } else if (inspection.getClass().isArray()) {
             // todo: implement
         }
@@ -284,7 +300,11 @@ public class Mongirl {
                 || clazz.equals(Double.class);
     }
 
-    private static Set<Bson> createEqualityRequirementsSet(Object storageObject) {
+    public void setDataClassAttributesAllEqualRelevant(boolean dataClassAttributesAllEqual) {
+        this.dataClassAttributesAllEqual = dataClassAttributesAllEqual;
+    }
+
+    private Set<Bson> createEqualityRequirementsSet(Object storageObject) {
         Set<Bson> equalityRequirements = new HashSet<>();
         for (Field field : storageObject.getClass().getDeclaredFields()) {
             field.trySetAccessible();
@@ -383,14 +403,14 @@ public class Mongirl {
         }
     }
 
-    private static boolean isEqualRelevant(Field field) {
+    private boolean isEqualRelevant(Field field) {
         if (!isStored(field)) {
             return false;
         }
 
         return (field.getAnnotation(StoreWith.class) != null
                 && field.getAnnotation(StoreWith.class).equalityRequirement())
-                || field.getAnnotation(Dataclass.class) != null;
+                || (field.getAnnotation(Dataclass.class) != null && dataClassAttributesAllEqual);
     }
 
     static String createStoreKey(Field field) {

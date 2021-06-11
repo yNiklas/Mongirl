@@ -4,6 +4,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
+import de.yniklas.mongirl.Dataclass;
 import de.yniklas.mongirl.Mongirl;
 import de.yniklas.mongirl.Pair;
 import de.yniklas.mongirl.examples.ExampleDataclass;
@@ -63,5 +64,10 @@ public class MongirlTests {
         int random = (int) (Math.random() * 1000);
         testMongirl.store(new ExampleFolded(String.valueOf(random)));
         System.out.println(testMongirl.decodeFromFilters(ExampleFolded.class, new Pair("idd", "27"), new Pair("sub", new ExampleSubObject("311"))));
+    }
+
+    @Test
+    public void testClasspath() {
+
     }
 }

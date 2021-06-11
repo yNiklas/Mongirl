@@ -9,4 +9,5 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 public @interface Dataclass {
     String collection();
+    boolean addClasspath() default false;
 }
