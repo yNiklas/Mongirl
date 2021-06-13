@@ -23,6 +23,7 @@ import java.lang.reflect.ParameterizedType;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Set;
 
@@ -60,11 +61,35 @@ public class Mongirl {
     }
 
     public Object store(Object storageObject) {
+        List<Object> storedObjects = new ArrayList<>();
+        List<PostStoreTask> postTasks = new ArrayList<>();
+
+        Object stored = store(storageObject, storedObjects, postTasks);
+
+        postTasks.forEach(task -> {
+            Document saved = DB.getCollection(collection(task.toStoreIn.getClass()))
+                    .find(Filters.and(createEqualityRequirementsSet(task.toStoreIn))).first();
+            Document foundTo = DB.getCollection(collection(task.value.getClass()))
+                    .find(Filters.and(createEqualityRequirementsSet(task.value))).first();
+
+            Document foundFrom = new Document(saved);
+
+            if (foundTo != null) {
+                foundFrom.put(task.key, foundTo.getObjectId("_id"));
+            }
+
+            DB.getCollection(collection(task.toStoreIn.getClass())).findOneAndReplace(saved, foundFrom);
+        });
+
+        return stored;
+    }
+
+    private Object store(Object storageObject, List<Object> alreadyStored, List<PostStoreTask> postTasks) {
         if (collection(storageObject.getClass()) == null) {
             return null;
         }
 
-        Document objAsDoc = createDocumentOf(storageObject);
+        Document objAsDoc = createDocumentOf(storageObject, alreadyStored, postTasks);
 
         // Collect all fields important for the equality check
         Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
@@ -87,8 +112,6 @@ public class Mongirl {
     }
 
     public ObjectId getObjectIdFrom(Object storageObject) {
-        Document objAsDoc = createDocumentOf(storageObject);
-
         // Collect all fields important for the equality check
         Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
 
@@ -97,19 +120,22 @@ public class Mongirl {
         }
 
         MongoCollection<Document> collection = DB.getCollection(collection(storageObject.getClass()));
-        Document foundDoc = collection.find(objAsDoc).first();
+        Document foundDoc = collection.find(Filters.and(equalityRequirements)).first();
 
         return foundDoc != null ? foundDoc.getObjectId("_id") : null;
     }
 
-    private Document createDocumentOf(Object storageObject) {
+    private Document createDocumentOf(Object storageObject, List<Object> storedObjects, List<PostStoreTask> postTasks) {
+        storedObjects.add(storageObject);
         Document document = new Document();
 
         for (Field field : storageObject.getClass().getDeclaredFields()) {
             field.trySetAccessible();
             if (isStored(field)) {
                 try {
-                    if (field.get(storageObject) == null) {
+                    if (storedObjects.contains(field.get(storageObject))) {
+                        postTasks.add(new PostStoreTask(storageObject, createStoreKey(field), field.get(storageObject)));
+                    } else if (field.get(storageObject) == null) {
                         document.append(createStoreKey(field), null);
                     } else if (isMongoPrimitive(field.get(storageObject).getClass())) {
                         document.append(createStoreKey(field), field.get(storageObject));
@@ -118,15 +144,15 @@ public class Mongirl {
                     } else if (field.get(storageObject) instanceof Iterable) {
                         if (field.get(storageObject) instanceof List) {
                             List<Object> encoded = new ArrayList<>();
-                            ((List) field.get(storageObject)).forEach(item -> encoded.add(store(item)));
+                            ((List) field.get(storageObject)).forEach(item -> encoded.add(store(item, storedObjects, postTasks)));
                             document.append(createStoreKey(field), encoded);
                         } else if (field.get(storageObject) instanceof Set) {
                             Set<Object> encoded = new HashSet<>();
-                            ((Set) field.get(storageObject)).forEach(item -> encoded.add(store(item)));
+                            ((Set) field.get(storageObject)).forEach(item -> encoded.add(store(item, storedObjects, postTasks)));
                             document.append(createStoreKey(field), encoded);
                         }
                     } else {
-                        document.append(createStoreKey(field), createDocumentOf(field.get(storageObject)).getObjectId("_id"));
+                        document.append(createStoreKey(field), store(field.get(storageObject), storedObjects, postTasks));
                     }
                 } catch (IllegalAccessException exception) {
                     exception.printStackTrace();
@@ -188,48 +214,37 @@ public class Mongirl {
 
         MongoCollection<Document> collection = DB.getCollection(collection(targetClass));
         for (Document document : collection.find()) {
-            decodedObjects.add(create(targetClass, document));
+            decodedObjects.add(decodeTo(targetClass, document.getObjectId("_id")));
         }
 
         return decodedObjects;
     }
 
-    private <T> void defineFieldValue(Document document, T emptyInstance, Field field) throws IllegalAccessException {
-        Object currentInspectionObject = document.get(createStoreKey(field));
+    public <T> T decodeTo(Class<T> targetClass, ObjectId _id) {
+        List<ObjectId> seenObjectIds = new ArrayList<>();
+        Hashtable<ObjectId, Object> decodedObjects = new Hashtable<>();
+        List<PostDecodeTask> postTasks = new ArrayList<>();
 
-        if (isMongoPrimitive(field.getType())) {
-            field.set(emptyInstance, currentInspectionObject);
-        } else if (currentInspectionObject instanceof ObjectId) {
-            field.set(emptyInstance, decodeTo(field.getType(), (ObjectId) currentInspectionObject));
-        } else if (currentInspectionObject instanceof Iterable) {
-            // List/Set/Array handling
-            if (currentInspectionObject instanceof List) {
-                List<Object> list = new ArrayList<>();
+        T decoded = decodeTo(targetClass, _id, seenObjectIds, decodedObjects, postTasks);
 
-                if (field.getGenericType() instanceof ParameterizedType) {
-                    ((List<Object>) currentInspectionObject).forEach(item -> {
-                        list.add(parse(item, (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0]));
-                    });
-                }
-
-                field.set(emptyInstance, list);
-            } else if (currentInspectionObject instanceof Set) {
-                Set<Object> set = new HashSet<>();
-
-                if (field.getGenericType() instanceof ParameterizedType) {
-                    ((List<Object>) currentInspectionObject).forEach(item -> {
-                        set.add(parse(item, (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0]));
-                    });
-                }
-
-                field.set(emptyInstance, set);
-            } else if (currentInspectionObject.getClass().isArray()) {
-                // todo: implement
+        postTasks.forEach(task -> {
+            try {
+                task.toDefineAfterwards.set(task.toDecodeIn, decodedObjects.get(task.fill));
+            } catch (IllegalAccessException e) {
+                e.printStackTrace();
             }
-        }
+        });
+
+        return decoded;
     }
 
-    public <T> T decodeTo(Class<T> targetClass, ObjectId _id) {
+    public <T> T decodeTo(Class<T> targetClass,
+                          ObjectId _id,
+                          List<ObjectId> seenIds,
+                          Hashtable<ObjectId, Object> decodedObjs,
+                          List<PostDecodeTask> postTasks) {
+        seenIds.add(_id);
+
         if (collection(targetClass) == null) {
             return null;
         }
@@ -241,24 +256,29 @@ public class Mongirl {
             return null;
         }
 
-        return create(targetClass, foundDocument);
+        T createdObj = create(targetClass, foundDocument, seenIds, decodedObjs, postTasks);
+        decodedObjs.put(_id, createdObj);
+        return createdObj;
     }
 
-    private <T> T create(Class<T> targetClass, Document document) {
-        System.out.println("Targetting " + targetClass + " for " + document);
+    private <T> T create(Class<T> targetClass,
+                         Document document,
+                         List<ObjectId> seenIds,
+                         Hashtable<ObjectId, Object> decodedObjs,
+                         List<PostDecodeTask> postTasks) {
         try {
-            T emptyInstance;
+            Class<T> realClass = targetClass;
             if (document.get("classpath") != null) {
-                emptyInstance = (T) Class.forName((String) document.get("classpath")).getConstructor().newInstance();
-            } else {
-                emptyInstance = targetClass.getConstructor().newInstance();
+                realClass = (Class<T>) Class.forName((String) document.get("classpath"));
             }
 
+            T emptyInstance = realClass.getConstructor().newInstance();
+
             // Reflect all stored attributes
-            for (Field field : targetClass.getDeclaredFields()) {
+            for (Field field : realClass.getDeclaredFields()) {
                 field.trySetAccessible();
                 if (isStored(field)) {
-                    defineFieldValue(document, emptyInstance, field);
+                    defineFieldValue(document, emptyInstance, field, seenIds, decodedObjs, postTasks);
                 }
             }
 
@@ -269,18 +289,74 @@ public class Mongirl {
         }
     }
 
-    private Object parse(Object inspection, Class<?> genericClass) {
+    private <T> void defineFieldValue(Document document,
+                                      T emptyInstance,
+                                      Field field,
+                                      List<ObjectId> seenIds,
+                                      Hashtable<ObjectId, Object> decodedObjs,
+                                      List<PostDecodeTask> postTasks) throws IllegalAccessException {
+        Object currentInspectionObject = document.get(createStoreKey(field));
+
+        if (isMongoPrimitive(field.getType())) {
+            field.set(emptyInstance, currentInspectionObject);
+        } else if (currentInspectionObject instanceof ObjectId) {
+            if (seenIds.contains((ObjectId) currentInspectionObject)) {
+                postTasks.add(new PostDecodeTask(emptyInstance, field, (ObjectId) currentInspectionObject));
+            } else {
+                field.set(emptyInstance, decodeTo(field.getType(), (ObjectId) currentInspectionObject, seenIds, decodedObjs, postTasks));
+            }
+        } else if (currentInspectionObject instanceof Iterable) {
+            // List/Set/Array handling
+            if (currentInspectionObject instanceof List) {
+                List<Object> list = new ArrayList<>();
+
+                if (field.getGenericType() instanceof ParameterizedType) {
+                    ((List<Object>) currentInspectionObject).forEach(item -> {
+                        list.add(parse(item,
+                                (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0],
+                                seenIds,
+                                decodedObjs,
+                                postTasks));
+                    });
+                }
+
+                field.set(emptyInstance, list);
+            } else if (currentInspectionObject instanceof Set) {
+                Set<Object> set = new HashSet<>();
+
+                if (field.getGenericType() instanceof ParameterizedType) {
+                    ((List<Object>) currentInspectionObject).forEach(item -> {
+                        set.add(parse(item,
+                                (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0],
+                                seenIds,
+                                decodedObjs,
+                                postTasks));
+                    });
+                }
+
+                field.set(emptyInstance, set);
+            } else if (currentInspectionObject.getClass().isArray()) {
+                // todo: implement
+            }
+        }
+    }
+
+    private Object parse(Object inspection,
+                         Class<?> genericClass,
+                         List<ObjectId> seenIds,
+                         Hashtable<ObjectId, Object> decodedObjs,
+                         List<PostDecodeTask> postTasks) {
         if (isMongoPrimitive(inspection.getClass())) {
             return inspection;
         } else if (inspection instanceof ObjectId) {
-            return decodeTo(genericClass, (ObjectId) inspection);
+            return decodeTo(genericClass, (ObjectId) inspection, seenIds, decodedObjs, postTasks);
         } else if (inspection instanceof List) {
             List<Object> list = new ArrayList<>();
-            ((List<Object>) inspection).forEach(item -> list.add(parse(item, item.getClass())));
+            ((List<Object>) inspection).forEach(item -> list.add(parse(item, item.getClass(), seenIds, decodedObjs, postTasks)));
             return list;
         } else if (inspection instanceof Set) {
             Set<Object> set = new HashSet<>();
-            ((Set<Object>) inspection).forEach(item -> set.add(parse(item, item.getClass())));
+            ((Set<Object>) inspection).forEach(item -> set.add(parse(item, item.getClass(), seenIds, decodedObjs, postTasks)));
             return set;
         } else if (inspection.getClass().isArray()) {
             // todo: implement
@@ -410,7 +486,7 @@ public class Mongirl {
 
         return (field.getAnnotation(StoreWith.class) != null
                 && field.getAnnotation(StoreWith.class).equalityRequirement())
-                || (field.getAnnotation(Dataclass.class) != null && dataClassAttributesAllEqual);
+                || (field.getDeclaringClass().getAnnotation(Dataclass.class) != null && dataClassAttributesAllEqual);
     }
 
     static String createStoreKey(Field field) {

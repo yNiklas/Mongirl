@@ -8,8 +8,10 @@ import de.yniklas.mongirl.Dataclass;
 import de.yniklas.mongirl.Mongirl;
 import de.yniklas.mongirl.Pair;
 import de.yniklas.mongirl.examples.ExampleDataclass;
+import de.yniklas.mongirl.examples.ExampleDoubleConnection1;
 import de.yniklas.mongirl.examples.ExampleFolded;
 import de.yniklas.mongirl.examples.ExampleSubObject;
+import org.bson.BsonObjectId;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeAll;
@@ -68,6 +70,6 @@ public class MongirlTests {
 
     @Test
     public void testClasspath() {
-
+        System.out.println(testMongirl.decodeTo(ExampleDoubleConnection1.class, ((BsonObjectId) testMongirl.store(new ExampleDoubleConnection1())).getValue()));
     }
 }
