@@ -27,15 +27,22 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Mongirl let you store Java objects to a MongoDB and decodes them for you back to Java Objects.
+ *
+ * @author yNiklas
+ */
 public class Mongirl {
     private final MongoClient CLIENT;
     private final MongoDatabase DB;
 
     /**
-     * Defines whether all attributes of a @Dataclass class are equality requirements.
+     * Creates a {@code Mongirl} instance without any credentials or authentication.
+     *
+     * @param host the host address of the database
+     * @param port the port of the database
+     * @param dbName the name of the database
      */
-    private boolean dataClassAttributesAllEqual = true;
-
     public Mongirl(String host, int port, String dbName) {
         MongoClientSettings settings = MongoClientSettings.builder()
                 .applyToClusterSettings(builder -> builder.hosts(Collections.singletonList(
@@ -46,6 +53,16 @@ public class Mongirl {
         DB = CLIENT.getDatabase(dbName);
     }
 
+    /**
+     * Create a {@code Mongirl} instance with credentials for the target database.
+     *
+     * @param host the host address of the database
+     * @param port the port of the database
+     * @param dbName the name of the database
+     * @param username the credentials username to authenticate the database connection
+     * @param authDB the database auth
+     * @param password the credentials password to authenticate the database connection
+     */
     public Mongirl(String host, int port, String dbName, String username, String authDB, char[] password) {
         MongoCredential credential = MongoCredential.createCredential(username, authDB, password);
 
@@ -60,6 +77,24 @@ public class Mongirl {
         DB = CLIENT.getDatabase(dbName);
     }
 
+    /**
+     * Stores the given object to the database.
+     * An attribute of the object will be stored iff
+     *
+     * <ul>
+     *     <li>The attribute is annotated with {@link StoreWith}</li>
+     *     <li>The class to the object is annotated with {@link Store}</li>
+     *     <li>The attribute isn't annotated with {@link DontStore}</li>
+     * </ul>
+     * or
+     * <ul>
+     *     <li>The class to the object is annotated with {@link Dataclass}</li>
+     *     <li>The attribute isn't annotated with {@link DontStore}</li>
+     * </ul>
+     *
+     * @param storageObject the object to store
+     * @return the ObjectId of the stored object or the inserted Id
+     */
     public Object store(Object storageObject) {
         List<Object> storedObjects = new ArrayList<>();
         List<PostStoreTask> postTasks = new ArrayList<>();
@@ -84,33 +119,13 @@ public class Mongirl {
         return stored;
     }
 
-    private Object store(Object storageObject, List<Object> alreadyStored, List<PostStoreTask> postTasks) {
-        if (collection(storageObject.getClass()) == null) {
-            return null;
-        }
-
-        Document objAsDoc = createDocumentOf(storageObject, alreadyStored, postTasks);
-
-        // Collect all fields important for the equality check
-        Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
-
-        MongoCollection<Document> collection = DB.getCollection(collection(storageObject.getClass()));
-
-        if (equalityRequirements.size() == 0) {
-            return collection.insertOne(objAsDoc).getInsertedId();
-        }
-
-        // Replace document, if found (updateOneAndReplace didn't work here!)
-        Document updated = collection.findOneAndReplace(Filters.and(equalityRequirements), objAsDoc);
-
-        if (updated == null) {
-            // Document wasn't replaced since there is no such document
-            return collection.insertOne(objAsDoc).getInsertedId();
-        } else {
-            return updated.getObjectId("_id");
-        }
-    }
-
+    /**
+     * Evaluates whether a object is stored based on its equal relevant attributes and, if so,
+     * returns its {@code ObjectId}.
+     *
+     * @param storageObject the object to get the {@code ObjectId} from
+     * @return the objects {@code ObjectId} if exists
+     */
     public ObjectId getObjectIdFrom(Object storageObject) {
         // Collect all fields important for the equality check
         Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
@@ -125,54 +140,16 @@ public class Mongirl {
         return foundDoc != null ? foundDoc.getObjectId("_id") : null;
     }
 
-    private Document createDocumentOf(Object storageObject, List<Object> storedObjects, List<PostStoreTask> postTasks) {
-        storedObjects.add(storageObject);
-        Document document = new Document();
-
-        for (Field field : storageObject.getClass().getDeclaredFields()) {
-            field.trySetAccessible();
-            if (isStored(field)) {
-                try {
-                    if (storedObjects.contains(field.get(storageObject))) {
-                        postTasks.add(new PostStoreTask(storageObject, createStoreKey(field), field.get(storageObject)));
-                    } else if (field.get(storageObject) == null) {
-                        document.append(createStoreKey(field), null);
-                    } else if (isMongoPrimitive(field.get(storageObject).getClass())) {
-                        document.append(createStoreKey(field), field.get(storageObject));
-                    } else if (field.isEnumConstant()) {
-                        document.append(createStoreKey(field), field.get(storageObject).toString());
-                    } else if (field.get(storageObject) instanceof Iterable) {
-                        if (field.get(storageObject) instanceof List) {
-                            List<Object> encoded = new ArrayList<>();
-                            ((List) field.get(storageObject)).forEach(item -> encoded.add(store(item, storedObjects, postTasks)));
-                            document.append(createStoreKey(field), encoded);
-                        } else if (field.get(storageObject) instanceof Set) {
-                            Set<Object> encoded = new HashSet<>();
-                            ((Set) field.get(storageObject)).forEach(item -> encoded.add(store(item, storedObjects, postTasks)));
-                            document.append(createStoreKey(field), encoded);
-                        }
-                    } else {
-                        document.append(createStoreKey(field), store(field.get(storageObject), storedObjects, postTasks));
-                    }
-                } catch (IllegalAccessException exception) {
-                    exception.printStackTrace();
-                }
-            }
-        }
-
-        Store storeAnn = storageObject.getClass().getAnnotation(Store.class);
-        if (storeAnn != null && storeAnn.addClasspath()) {
-            document.append("classpath", storageObject.getClass().getName());
-        } else {
-            Dataclass dataclassAnn = storageObject.getClass().getAnnotation(Dataclass.class);
-            if (dataclassAnn != null && dataclassAnn.addClasspath()) {
-                document.append("classpath", storageObject.getClass().getName());
-            }
-        }
-
-        return document;
-    }
-
+    /**
+     * Decodes a database stored object based on given filters and the class of the to be decoded
+     * object.
+     *
+     * @param targetClass the {@code Class} of the decoded object
+     * @param pairs the search parameters given as {@link Pair}
+     * @param <T> the type of the decoded object
+     * @return the decoded, first result of the database search with the given {@code pairs} or
+     *         null if there was no search results
+     */
     public <T> T decodeFromFilters(Class<T> targetClass, Pair... pairs) {
         if (collection(targetClass) == null) {
             return null;
@@ -205,6 +182,13 @@ public class Mongirl {
         return decodeTo(targetClass, foundDocument.getObjectId("_id"));
     }
 
+    /**
+     * Decodes all objects of a given type stored in the database.
+     *
+     * @param targetClass the {@code Class} of the objects to decode
+     * @param <T> the type of the decoded objects
+     * @return a {@link List} with all decoded objects
+     */
     public <T> List<T> decodeAll(Class<T> targetClass) {
         if (collection(targetClass) == null) {
             return null;
@@ -220,6 +204,14 @@ public class Mongirl {
         return decodedObjects;
     }
 
+    /**
+     * Decodes a object stored in the database with the given {@code ObjectId}.
+     *
+     * @param targetClass the {@code Class} of the decoded object
+     * @param _id the {@code ObjectId} of the database document to decode
+     * @param <T> the type of the decoded object
+     * @return the decoded object or null if the decode fail
+     */
     public <T> T decodeTo(Class<T> targetClass, ObjectId _id) {
         List<ObjectId> seenObjectIds = new ArrayList<>();
         Hashtable<ObjectId, Object> decodedObjects = new Hashtable<>();
@@ -238,7 +230,34 @@ public class Mongirl {
         return decoded;
     }
 
-    public <T> T decodeTo(Class<T> targetClass,
+    private Object store(Object storageObject, List<Object> alreadyStored, List<PostStoreTask> postTasks) {
+        if (collection(storageObject.getClass()) == null) {
+            return null;
+        }
+
+        Document objAsDoc = createDocumentOf(storageObject, alreadyStored, postTasks);
+
+        // Collect all fields important for the equality check
+        Set<Bson> equalityRequirements = createEqualityRequirementsSet(storageObject);
+
+        MongoCollection<Document> collection = DB.getCollection(collection(storageObject.getClass()));
+
+        if (equalityRequirements.size() == 0) {
+            return collection.insertOne(objAsDoc).getInsertedId();
+        }
+
+        // Replace document, if found (updateOneAndReplace didn't work here!)
+        Document updated = collection.findOneAndReplace(Filters.and(equalityRequirements), objAsDoc);
+
+        if (updated == null) {
+            // Document wasn't replaced since there is no such document
+            return collection.insertOne(objAsDoc).getInsertedId();
+        } else {
+            return updated.getObjectId("_id");
+        }
+    }
+
+    private <T> T decodeTo(Class<T> targetClass,
                           ObjectId _id,
                           List<ObjectId> seenIds,
                           Hashtable<ObjectId, Object> decodedObjs,
@@ -259,6 +278,54 @@ public class Mongirl {
         T createdObj = create(targetClass, foundDocument, seenIds, decodedObjs, postTasks);
         decodedObjs.put(_id, createdObj);
         return createdObj;
+    }
+
+    private Document createDocumentOf(Object storageObject, List<Object> storedObjects, List<PostStoreTask> postTasks) {
+        storedObjects.add(storageObject);
+        Document document = new Document();
+
+        for (Field field : storageObject.getClass().getDeclaredFields()) {
+            field.trySetAccessible();
+            if (isStored(field)) {
+                try {
+                    if (storedObjects.contains(field.get(storageObject))) {
+                        postTasks.add(new PostStoreTask(storageObject, createStoreKey(field), field.get(storageObject)));
+                    } else if (field.get(storageObject) == null) {
+                        document.append(createStoreKey(field), null);
+                    } else if (isMongoPrimitive(field.get(storageObject).getClass())) {
+                        document.append(createStoreKey(field), field.get(storageObject));
+                    } else if (field.getType().isEnum()) {
+                        document.append(createStoreKey(field), field.get(storageObject).toString());
+                    } else if (field.get(storageObject) instanceof Iterable) {
+                        if (field.get(storageObject) instanceof List) {
+                            List<Object> encoded = new ArrayList<>();
+                            ((List) field.get(storageObject)).forEach(item -> encoded.add(store(item, storedObjects, postTasks)));
+                            document.append(createStoreKey(field), encoded);
+                        } else if (field.get(storageObject) instanceof Set) {
+                            Set<Object> encoded = new HashSet<>();
+                            ((Set) field.get(storageObject)).forEach(item -> encoded.add(store(item, storedObjects, postTasks)));
+                            document.append(createStoreKey(field), encoded);
+                        }
+                    } else {
+                        document.append(createStoreKey(field), store(field.get(storageObject), storedObjects, postTasks));
+                    }
+                } catch (IllegalAccessException exception) {
+                    exception.printStackTrace();
+                }
+            }
+        }
+
+        Store storeAnn = storageObject.getClass().getAnnotation(Store.class);
+        if (storeAnn != null && storeAnn.addClasspath()) {
+            document.append("classpath", storageObject.getClass().getName());
+        } else {
+            Dataclass dataclassAnn = storageObject.getClass().getAnnotation(Dataclass.class);
+            if (dataclassAnn != null && dataclassAnn.addClasspath()) {
+                document.append("classpath", storageObject.getClass().getName());
+            }
+        }
+
+        return document;
     }
 
     private <T> T create(Class<T> targetClass,
@@ -304,6 +371,13 @@ public class Mongirl {
                 postTasks.add(new PostDecodeTask(emptyInstance, field, (ObjectId) currentInspectionObject));
             } else {
                 field.set(emptyInstance, decodeTo(field.getType(), (ObjectId) currentInspectionObject, seenIds, decodedObjs, postTasks));
+            }
+        } else if (field.getType().isEnum()) {
+            for (Object enumConstant : field.getType().getEnumConstants()) {
+                if (enumConstant.toString().equals(currentInspectionObject)) {
+                    field.set(emptyInstance, enumConstant);
+                    break;
+                }
             }
         } else if (currentInspectionObject instanceof Iterable) {
             // List/Set/Array handling
@@ -374,10 +448,6 @@ public class Mongirl {
                 || clazz.equals(Long.class)
                 || clazz.equals(Float.class)
                 || clazz.equals(Double.class);
-    }
-
-    public void setDataClassAttributesAllEqualRelevant(boolean dataClassAttributesAllEqual) {
-        this.dataClassAttributesAllEqual = dataClassAttributesAllEqual;
     }
 
     private Set<Bson> createEqualityRequirementsSet(Object storageObject) {
@@ -486,7 +556,8 @@ public class Mongirl {
 
         return (field.getAnnotation(StoreWith.class) != null
                 && field.getAnnotation(StoreWith.class).equalityRequirement())
-                || (field.getDeclaringClass().getAnnotation(Dataclass.class) != null && dataClassAttributesAllEqual);
+                || (field.getDeclaringClass().getAnnotation(Dataclass.class) != null
+                && field.getDeclaringClass().getAnnotation(Dataclass.class).allAttributesEqualRelevant());
     }
 
     static String createStoreKey(Field field) {

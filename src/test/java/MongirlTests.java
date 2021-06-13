@@ -9,6 +9,7 @@ import de.yniklas.mongirl.Mongirl;
 import de.yniklas.mongirl.Pair;
 import de.yniklas.mongirl.examples.ExampleDataclass;
 import de.yniklas.mongirl.examples.ExampleDoubleConnection1;
+import de.yniklas.mongirl.examples.ExampleEnum;
 import de.yniklas.mongirl.examples.ExampleFolded;
 import de.yniklas.mongirl.examples.ExampleSubObject;
 import org.bson.BsonObjectId;
@@ -40,12 +41,12 @@ public class MongirlTests {
 
     @Test
     public void testInsertOne() {
-        System.out.println(testMongirl.store(new ExampleFolded("12. test")));
+        assertEquals(((ObjectId) testMongirl.store(new ExampleFolded("12. test"))).toString(), "60c6691e2859765d6b7dd2fb");
     }
 
     @Test
     public void testDecode() {
-        System.out.println(testMongirl.decodeAll(ExampleFolded.class));
+        assertEquals(testMongirl.decodeAll(ExampleFolded.class).get(0).idd, "5");
     }
 
     @Test
@@ -65,11 +66,20 @@ public class MongirlTests {
     public void testDecodeFromFilters() {
         int random = (int) (Math.random() * 1000);
         testMongirl.store(new ExampleFolded(String.valueOf(random)));
-        System.out.println(testMongirl.decodeFromFilters(ExampleFolded.class, new Pair("idd", "27"), new Pair("sub", new ExampleSubObject("311"))));
+        ExampleFolded decoded = testMongirl.decodeFromFilters(ExampleFolded.class, new Pair("idd", "27"), new Pair("sub", new ExampleSubObject("311")));
+        assertEquals(decoded.idd, "27");
+        assertEquals(decoded.sub.haha, "311");
     }
 
     @Test
     public void testClasspath() {
-        System.out.println(testMongirl.decodeTo(ExampleDoubleConnection1.class, ((BsonObjectId) testMongirl.store(new ExampleDoubleConnection1())).getValue()));
+        ExampleDoubleConnection1 decoded = testMongirl.decodeTo(ExampleDoubleConnection1.class, ((BsonObjectId) testMongirl.store(new ExampleDoubleConnection1())).getValue());
+        assertEquals(decoded.iddd, decoded.connection2s.get(0).connection1.iddd);
+    }
+
+    @Test
+    public void testEnum() {
+        testMongirl.store(new ExampleEnum());
+        assertEquals(testMongirl.decodeFromFilters(ExampleEnum.class, new Pair("id", 6)).tip.toString(), "TYPO2");
     }
 }
