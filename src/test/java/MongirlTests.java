@@ -4,21 +4,26 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
-import de.yniklas.mongirl.Dataclass;
 import de.yniklas.mongirl.Mongirl;
 import de.yniklas.mongirl.Pair;
 import de.yniklas.mongirl.examples.ExampleDataclass;
 import de.yniklas.mongirl.examples.ExampleDoubleConnection1;
 import de.yniklas.mongirl.examples.ExampleEnum;
 import de.yniklas.mongirl.examples.ExampleFolded;
+import de.yniklas.mongirl.examples.ExampleSubClass;
 import de.yniklas.mongirl.examples.ExampleSubObject;
+import de.yniklas.mongirl.examples.ExampleSuperclass;
 import org.bson.BsonObjectId;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -81,5 +86,13 @@ public class MongirlTests {
     public void testEnum() {
         testMongirl.store(new ExampleEnum());
         assertEquals(testMongirl.decodeFromFilters(ExampleEnum.class, new Pair("id", 6)).tip.toString(), "TYPO2");
+    }
+
+    @Test
+    public void testInheritance() {
+        ExampleSuperclass x = new ExampleSubClass();
+        testMongirl.store(x);
+
+        assertEquals("20", testMongirl.decodeAll(ExampleSubClass.class).get(1).getSuperInt());
     }
 }

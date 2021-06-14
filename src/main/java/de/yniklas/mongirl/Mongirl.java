@@ -8,6 +8,7 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
+import de.yniklas.mongirl.exception.MongirlDecodeException;
 import org.bson.BsonReader;
 import org.bson.BsonWriter;
 import org.bson.Document;
@@ -21,6 +22,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.ParameterizedType;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Hashtable;
@@ -284,7 +286,7 @@ public class Mongirl {
         storedObjects.add(storageObject);
         Document document = new Document();
 
-        for (Field field : storageObject.getClass().getDeclaredFields()) {
+        for (Field field : getFields(storageObject)) {
             field.trySetAccessible();
             if (isStored(field)) {
                 try {
@@ -333,8 +335,8 @@ public class Mongirl {
                          List<ObjectId> seenIds,
                          Hashtable<ObjectId, Object> decodedObjs,
                          List<PostDecodeTask> postTasks) {
+        Class<T> realClass = targetClass;
         try {
-            Class<T> realClass = targetClass;
             if (document.get("classpath") != null) {
                 realClass = (Class<T>) Class.forName((String) document.get("classpath"));
             }
@@ -342,7 +344,7 @@ public class Mongirl {
             T emptyInstance = realClass.getConstructor().newInstance();
 
             // Reflect all stored attributes
-            for (Field field : realClass.getDeclaredFields()) {
+            for (Field field : getFields(realClass)) {
                 field.trySetAccessible();
                 if (isStored(field)) {
                     defineFieldValue(document, emptyInstance, field, seenIds, decodedObjs, postTasks);
@@ -350,9 +352,11 @@ public class Mongirl {
             }
 
             return emptyInstance;
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException | ClassNotFoundException e) {
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | ClassNotFoundException e) {
             e.printStackTrace();
             return null;
+        } catch (NoSuchMethodException e) {
+            throw new MongirlDecodeException(String.format(MongirlDecodeException.NO_DEFAULT_CONSTRICTOR, realClass.getName()));
         }
     }
 
@@ -452,7 +456,7 @@ public class Mongirl {
 
     private Set<Bson> createEqualityRequirementsSet(Object storageObject) {
         Set<Bson> equalityRequirements = new HashSet<>();
-        for (Field field : storageObject.getClass().getDeclaredFields()) {
+        for (Field field : getFields(storageObject)) {
             field.trySetAccessible();
             if (isEqualRelevant(field)) {
                 try {
@@ -468,7 +472,7 @@ public class Mongirl {
     public static void encode(Object toEncode, BsonWriter writer, EncoderContext encoderContext) {
         writer.writeStartDocument();
 
-        for (Field field : toEncode.getClass().getDeclaredFields()) {
+        for (Field field : getFields(toEncode)) {
             if (isStored(field)) {
                 try {
                     if (field.getType().equals(ObjectId.class)) {
@@ -512,7 +516,7 @@ public class Mongirl {
         reader.readStartDocument();
 
         ConstructorList constructorList = new ConstructorList();
-        for (Field field : toDecode.getDeclaredFields()) {
+        for (Field field : getFields(toDecode)) {
             constructorList.addPair(new ConstructorPair(reader, field, decoderContext));
         }
         reader.readEndDocument();
@@ -571,5 +575,20 @@ public class Mongirl {
     private static void illegalAccess(IllegalAccessException e, Field field) {
         System.out.println("Couldn't access the field " + field + System.lineSeparator());
         e.printStackTrace();
+    }
+
+    private static <T> List<Field> getFields(T t) {
+        return getFields(t.getClass());
+    }
+
+    private static <T> List<Field> getFields(Class<T> targetClass) {
+        List<Field> fields = new ArrayList<>();
+        Class<?> clazz = targetClass;
+
+        while (clazz != Object.class) {
+            fields.addAll(Arrays.asList(clazz.getDeclaredFields()));
+            clazz = clazz.getSuperclass();
+        }
+        return fields;
     }
 }

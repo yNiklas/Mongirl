@@ -6,7 +6,7 @@
 
     <groupId>de.yniklas</groupId>
     <artifactId>Mongirl</artifactId>
-    <version>1.10</version>
+    <version>1.11</version>
 
     <properties>
         <maven.compiler.source>16</maven.compiler.source>
