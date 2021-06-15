@@ -12,6 +12,7 @@ import de.yniklas.mongirl.exception.MongirlDecodeException;
 import org.bson.BsonReader;
 import org.bson.BsonWriter;
 import org.bson.Document;
+import org.bson.UuidRepresentation;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.EncoderContext;
 import org.bson.conversions.Bson;
@@ -28,6 +29,7 @@ import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Mongirl let you store Java objects to a MongoDB and decodes them for you back to Java Objects.
@@ -49,7 +51,9 @@ public class Mongirl {
         MongoClientSettings settings = MongoClientSettings.builder()
                 .applyToClusterSettings(builder -> builder.hosts(Collections.singletonList(
                         new ServerAddress(host, port)
-                ))).build();
+                )))
+                .uuidRepresentation(UuidRepresentation.STANDARD)
+                .build();
 
         CLIENT = MongoClients.create(settings);
         DB = CLIENT.getDatabase(dbName);
@@ -72,7 +76,9 @@ public class Mongirl {
                 .credential(credential)
                 .applyToClusterSettings(builder -> builder.hosts(Collections.singletonList(
                         new ServerAddress(host, port)
-                ))).build();
+                )))
+                .uuidRepresentation(UuidRepresentation.STANDARD)
+                .build();
 
 
         CLIENT = MongoClients.create(settings);
@@ -104,18 +110,23 @@ public class Mongirl {
         Object stored = store(storageObject, storedObjects, postTasks);
 
         postTasks.forEach(task -> {
-            Document saved = DB.getCollection(collection(task.toStoreIn.getClass()))
-                    .find(Filters.and(createEqualityRequirementsSet(task.toStoreIn))).first();
-            Document foundTo = DB.getCollection(collection(task.value.getClass()))
-                    .find(Filters.and(createEqualityRequirementsSet(task.value))).first();
+            if (createEqualityRequirementsSet(task.toStoreIn).size() == 0
+                    || createEqualityRequirementsSet(task.value).size() == 0) {
+                System.out.println(task.value);
+            } else {
+                Document saved = DB.getCollection(collection(task.toStoreIn.getClass()))
+                        .find(Filters.and(createEqualityRequirementsSet(task.toStoreIn))).first();
+                Document foundTo = DB.getCollection(collection(task.value.getClass()))
+                        .find(Filters.and(createEqualityRequirementsSet(task.value))).first();
 
-            Document foundFrom = new Document(saved);
+                Document foundFrom = new Document(saved);
 
-            if (foundTo != null) {
-                foundFrom.put(task.key, foundTo.getObjectId("_id"));
+                if (foundTo != null) {
+                    foundFrom.put(task.key, foundTo.getObjectId("_id"));
+                }
+
+                DB.getCollection(collection(task.toStoreIn.getClass())).findOneAndReplace(saved, foundFrom);
             }
-
-            DB.getCollection(collection(task.toStoreIn.getClass())).findOneAndReplace(saved, foundFrom);
         });
 
         return stored;
@@ -317,14 +328,15 @@ public class Mongirl {
             }
         }
 
+        // Store the classpath if annotated so or the class has a concrete super class or
+        // implements an interface
         Store storeAnn = storageObject.getClass().getAnnotation(Store.class);
-        if (storeAnn != null && storeAnn.addClasspath()) {
+        Dataclass dataclassAnn = storageObject.getClass().getAnnotation(Dataclass.class);
+        if ((storeAnn != null && storeAnn.addClasspath())
+                || (dataclassAnn != null && dataclassAnn.addClasspath())
+                || (storageObject.getClass().getSuperclass() != null && storageObject.getClass().getSuperclass() != Object.class)
+                || (storageObject.getClass().getInterfaces().length != 0)) {
             document.append("classpath", storageObject.getClass().getName());
-        } else {
-            Dataclass dataclassAnn = storageObject.getClass().getAnnotation(Dataclass.class);
-            if (dataclassAnn != null && dataclassAnn.addClasspath()) {
-                document.append("classpath", storageObject.getClass().getName());
-            }
         }
 
         return document;
@@ -385,11 +397,11 @@ public class Mongirl {
             }
         } else if (currentInspectionObject instanceof Iterable) {
             // List/Set/Array handling
-            if (currentInspectionObject instanceof List) {
+            if (isClass(field.getType(), List.class)) {
                 List<Object> list = new ArrayList<>();
 
                 if (field.getGenericType() instanceof ParameterizedType) {
-                    ((List<Object>) currentInspectionObject).forEach(item -> {
+                    ((Iterable<Object>) currentInspectionObject).forEach(item -> {
                         list.add(parse(item,
                                 (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0],
                                 seenIds,
@@ -399,11 +411,11 @@ public class Mongirl {
                 }
 
                 field.set(emptyInstance, list);
-            } else if (currentInspectionObject instanceof Set) {
+            } else if (isClass(field.getType(), Set.class)) {
                 Set<Object> set = new HashSet<>();
 
                 if (field.getGenericType() instanceof ParameterizedType) {
-                    ((List<Object>) currentInspectionObject).forEach(item -> {
+                    ((Iterable<Object>) currentInspectionObject).forEach(item -> {
                         set.add(parse(item,
                                 (Class<?>) ((ParameterizedType) field.getGenericType()).getActualTypeArguments()[0],
                                 seenIds,
@@ -428,13 +440,13 @@ public class Mongirl {
             return inspection;
         } else if (inspection instanceof ObjectId) {
             return decodeTo(genericClass, (ObjectId) inspection, seenIds, decodedObjs, postTasks);
-        } else if (inspection instanceof List) {
+        } else if (isClass(inspection.getClass(), List.class)) {
             List<Object> list = new ArrayList<>();
-            ((List<Object>) inspection).forEach(item -> list.add(parse(item, item.getClass(), seenIds, decodedObjs, postTasks)));
+            ((Iterable<Object>) inspection).forEach(item -> list.add(parse(item, item.getClass(), seenIds, decodedObjs, postTasks)));
             return list;
-        } else if (inspection instanceof Set) {
+        } else if (isClass(inspection.getClass(), Set.class)) {
             Set<Object> set = new HashSet<>();
-            ((Set<Object>) inspection).forEach(item -> set.add(parse(item, item.getClass(), seenIds, decodedObjs, postTasks)));
+            ((Iterable<Object>) inspection).forEach(item -> set.add(parse(item, item.getClass(), seenIds, decodedObjs, postTasks)));
             return set;
         } else if (inspection.getClass().isArray()) {
             // todo: implement
@@ -451,7 +463,8 @@ public class Mongirl {
                 || clazz.equals(Integer.class)
                 || clazz.equals(Long.class)
                 || clazz.equals(Float.class)
-                || clazz.equals(Double.class);
+                || clazz.equals(Double.class)
+                || clazz.equals(UUID.class);
     }
 
     private Set<Bson> createEqualityRequirementsSet(Object storageObject) {
@@ -590,5 +603,20 @@ public class Mongirl {
             clazz = clazz.getSuperclass();
         }
         return fields;
+    }
+
+    private static boolean isClass(Class<?> toCheck, Class<?> target) {
+        if (toCheck == target) {
+            return true;
+        }
+
+        Class<?> superClass = toCheck.getSuperclass();
+        while (superClass != null) {
+            if (superClass == target) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
