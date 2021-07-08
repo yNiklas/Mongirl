@@ -8,6 +8,21 @@
     <artifactId>Mongirl</artifactId>
     <version>1.12</version>
 
+    <name>Packman</name>
+    <description>Mongirl stores Java Objects to a Mongo Database - based on annotations</description>
+    <url>https://github.com/yNiklas/Mongirl</url>
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>https://apache.org/licenses/LICENSE-2.0</url>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <name>yNiklas</name>
+        </developer>
+    </developers>
+
     <properties>
         <maven.compiler.source>16</maven.compiler.source>
         <maven.compiler.target>16</maven.compiler.target>

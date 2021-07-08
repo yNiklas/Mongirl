@@ -9,12 +9,14 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import de.yniklas.mongirl.exception.MongirlDecodeException;
+import de.yniklas.mongirl.exception.MongirlStoreException;
 import org.bson.BsonReader;
 import org.bson.BsonWriter;
 import org.bson.Document;
 import org.bson.UuidRepresentation;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.EncoderContext;
+import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
@@ -106,28 +108,30 @@ public class Mongirl {
     public Object store(Object storageObject) {
         List<Object> storedObjects = new ArrayList<>();
         List<PostStoreTask> postTasks = new ArrayList<>();
+        Object stored;
 
-        Object stored = store(storageObject, storedObjects, postTasks);
+        try {
+            stored = store(storageObject, storedObjects, postTasks);
 
-        postTasks.forEach(task -> {
-            if (createEqualityRequirementsSet(task.toStoreIn).size() == 0
-                    || createEqualityRequirementsSet(task.value).size() == 0) {
-                System.out.println(task.value);
-            } else {
-                Document saved = DB.getCollection(collection(task.toStoreIn.getClass()))
-                        .find(Filters.and(createEqualityRequirementsSet(task.toStoreIn))).first();
-                Document foundTo = DB.getCollection(collection(task.value.getClass()))
-                        .find(Filters.and(createEqualityRequirementsSet(task.value))).first();
+            postTasks.forEach(task -> {
+                if (createEqualityRequirementsSet(task.toStoreIn).size() != 0
+                        && createEqualityRequirementsSet(task.value).size() != 0) {
+                    Document saved = DB.getCollection(collection(task.toStoreIn.getClass()))
+                            .find(Filters.and(createEqualityRequirementsSet(task.toStoreIn))).first();
+                    Document foundTo = DB.getCollection(collection(task.value.getClass()))
+                            .find(Filters.and(createEqualityRequirementsSet(task.value))).first();
+                    Document foundFrom = new Document(saved);
 
-                Document foundFrom = new Document(saved);
+                    if (foundTo != null) {
+                        foundFrom.put(task.key, foundTo.getObjectId("_id"));
+                    }
 
-                if (foundTo != null) {
-                    foundFrom.put(task.key, foundTo.getObjectId("_id"));
+                    DB.getCollection(collection(task.toStoreIn.getClass())).findOneAndReplace(saved, foundFrom);
                 }
-
-                DB.getCollection(collection(task.toStoreIn.getClass())).findOneAndReplace(saved, foundFrom);
-            }
-        });
+            });
+        } catch (Exception exception) {
+            throw new MongirlStoreException(exception.getMessage());
+        }
 
         return stored;
     }
@@ -259,8 +263,16 @@ public class Mongirl {
             return collection.insertOne(objAsDoc).getInsertedId();
         }
 
-        // Replace document, if found (updateOneAndReplace didn't work here!)
-        Document updated = collection.findOneAndReplace(Filters.and(equalityRequirements), objAsDoc);
+        Document updated = null;
+        try {
+            // Replace document, if found (updateOneAndReplace didn't work here!)
+            updated = collection.findOneAndReplace(Filters.and(equalityRequirements), objAsDoc);
+        } catch (CodecConfigurationException exception) {
+            throw new MongirlStoreException(
+                    String.format(
+                            MongirlStoreException.NO_CODEC,
+                            exception.getMessage()));
+        }
 
         if (updated == null) {
             // Document wasn't replaced since there is no such document
@@ -381,7 +393,11 @@ public class Mongirl {
         Object currentInspectionObject = document.get(createStoreKey(field));
 
         if (isMongoPrimitive(field.getType())) {
-            field.set(emptyInstance, currentInspectionObject);
+            if (currentInspectionObject instanceof Integer) {
+                field.set(emptyInstance, parseFromNumber((Integer) currentInspectionObject, field));
+            } else {
+                field.set(emptyInstance, currentInspectionObject);
+            }
         } else if (currentInspectionObject instanceof ObjectId) {
             if (seenIds.contains((ObjectId) currentInspectionObject)) {
                 postTasks.add(new PostDecodeTask(emptyInstance, field, (ObjectId) currentInspectionObject));
@@ -431,6 +447,18 @@ public class Mongirl {
         }
     }
 
+    private Object parseFromNumber(Integer currentInspectionObject, Field field) {
+        if (field.getType() == byte.class) {
+            return currentInspectionObject.byteValue();
+        } else if (field.getType() == short.class) {
+            return currentInspectionObject.shortValue();
+        } else if (field.getType() == long.class) {
+            return currentInspectionObject.longValue();
+        } else {
+            return currentInspectionObject.intValue();
+        }
+    }
+
     private Object parse(Object inspection,
                          Class<?> genericClass,
                          List<ObjectId> seenIds,
@@ -471,7 +499,7 @@ public class Mongirl {
         Set<Bson> equalityRequirements = new HashSet<>();
         for (Field field : getFields(storageObject)) {
             field.trySetAccessible();
-            if (isEqualRelevant(field)) {
+            if (isEqualRelevant(field) && isMongoPrimitive(field.getType())) {
                 try {
                     equalityRequirements.add(Filters.eq(createStoreKey(field), field.get(storageObject)));
                 } catch (IllegalAccessException e) {
