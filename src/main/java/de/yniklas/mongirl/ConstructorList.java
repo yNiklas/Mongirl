@@ -3,6 +3,7 @@ package de.yniklas.mongirl;
 import java.util.ArrayList;
 import java.util.List;
 
+@Deprecated
 public class ConstructorList {
     private final List<ConstructorPair> pairs;
 

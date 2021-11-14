@@ -324,11 +324,23 @@ public class Mongirl {
                     } else if (field.get(storageObject) instanceof Iterable) {
                         if (field.get(storageObject) instanceof List) {
                             List<Object> encoded = new ArrayList<>();
-                            ((List) field.get(storageObject)).forEach(item -> encoded.add(store(item, storedObjects, postTasks)));
+                            ((List) field.get(storageObject)).forEach(item -> {
+                                if (isMongoPrimitive(item.getClass())) {
+                                    encoded.add(item);
+                                } else {
+                                    encoded.add(store(item, storedObjects, postTasks));
+                                }
+                            });
                             document.append(createStoreKey(field), encoded);
                         } else if (field.get(storageObject) instanceof Set) {
                             Set<Object> encoded = new HashSet<>();
-                            ((Set) field.get(storageObject)).forEach(item -> encoded.add(store(item, storedObjects, postTasks)));
+                            ((Set) field.get(storageObject)).forEach(item -> {
+                                if (isMongoPrimitive(item.getClass())) {
+                                    encoded.add(item);
+                                } else {
+                                    encoded.add(store(item, storedObjects, postTasks));
+                                }
+                            });
                             document.append(createStoreKey(field), encoded);
                         }
                     } else {
@@ -510,6 +522,7 @@ public class Mongirl {
         return equalityRequirements;
     }
 
+    @Deprecated
     public static void encode(Object toEncode, BsonWriter writer, EncoderContext encoderContext) {
         writer.writeStartDocument();
 
@@ -553,6 +566,7 @@ public class Mongirl {
         writer.writeEndDocument();
     }
 
+    @Deprecated
     public static <T> T decode(Class<T> toDecode, BsonReader reader, DecoderContext decoderContext) {
         reader.readStartDocument();
 

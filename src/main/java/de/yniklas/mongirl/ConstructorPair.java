@@ -9,6 +9,7 @@ import java.lang.reflect.Field;
 import java.util.LinkedList;
 import java.util.List;
 
+@Deprecated
 public class ConstructorPair {
     Class constructorParameterClass;
     Object value;

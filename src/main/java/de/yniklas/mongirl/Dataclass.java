@@ -14,7 +14,7 @@ public @interface Dataclass {
     /**
      * Indicates that all attributes of the annotated class are relevant for the equality
      * check. If so, two objects of this class where all attributes are equal won't be stored separately.
-     * This can cause problems if you don't update the database via {@link Mongirl#store(Object)}.
+     * This can cause problems if you don't sufficiently update the database via {@link Mongirl#store(Object)}.
      * For the safety (but disk-space heavy) way, set this to false.
      */
     boolean allAttributesEqualRelevant() default true;
