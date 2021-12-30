@@ -76,6 +76,3 @@ Stores all attributes of the class, no further `@StoreWith` annotations needed. 
 ### Dataclasses
  + Dataclasses (annotated by ```@Dataclass(collection = ...)```) have all attributes implicitly annotated as equality requirement fields.
  So, in the database, there wouldn't be multiple equal entries. Use ```allAttributesEqualRelevant = false``` in the ```@DataClass``` annotation params to change.
- 
-### Arrays
- + Unfortunately, Mongirl currently cannot store native arrays. Lists and Sets with a primitive Type (such as ```List<Integer>``` and ```List<String>```) are supported, but ```ìnt[] a = {1, 2}``` not.
