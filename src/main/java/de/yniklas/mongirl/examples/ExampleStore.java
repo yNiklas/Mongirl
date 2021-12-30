@@ -25,4 +25,7 @@ public class ExampleStore {
         this.x = x;
         this.subsub = subsub;
     }
+
+    public ExampleStore() {
+    }
 }

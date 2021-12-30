@@ -6,6 +6,7 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import de.yniklas.mongirl.Mongirl;
 import de.yniklas.mongirl.Pair;
+import de.yniklas.mongirl.examples.ExampleArrayClass;
 import de.yniklas.mongirl.examples.ExampleDataclass;
 import de.yniklas.mongirl.examples.ExampleDoubleConnection1;
 import de.yniklas.mongirl.examples.ExampleEnum;
@@ -42,12 +43,12 @@ public class MongirlTests {
 
     @Test
     public void testInsertOne() {
-        assertEquals(((ObjectId) testMongirl.store(new ExampleFolded("12. test"))).toString(), "60c6691e2859765d6b7dd2fb");
+        assertEquals(((ObjectId) testMongirl.store(new ExampleFolded("12. test"))).toString(), "619ffac06d45b90686db4bcc");
     }
 
     @Test
     public void testDecode() {
-        assertEquals(testMongirl.decodeAll(ExampleFolded.class).get(0).idd, "5");
+        assertEquals(testMongirl.decodeAll(ExampleFolded.class).get(0).idd, "28");
     }
 
     @Test
@@ -67,9 +68,9 @@ public class MongirlTests {
     public void testDecodeFromFilters() {
         int random = (int) (Math.random() * 1000);
         testMongirl.store(new ExampleFolded(String.valueOf(random)));
-        ExampleFolded decoded = testMongirl.decodeFromFilters(ExampleFolded.class, new Pair("idd", "27"), new Pair("sub", new ExampleSubObject("311")));
-        assertEquals(decoded.idd, "27");
-        assertEquals(decoded.sub.haha, "311");
+        ExampleFolded decoded = testMongirl.decodeFromFilters(ExampleFolded.class, new Pair("idd", "28"), new Pair("sub", new ExampleSubObject(String.valueOf(random))));
+        assertEquals(decoded.idd, "28");
+        assertEquals(decoded.sub.haha, String.valueOf(random));
     }
 
     @Test
@@ -89,6 +90,12 @@ public class MongirlTests {
         ExampleSuperclass x = new ExampleSubClass();
         testMongirl.store(x);
 
-        assertEquals("20", testMongirl.decodeAll(ExampleSubClass.class).get(1).getSuperInt());
+        assertEquals("20", testMongirl.decodeAll(ExampleSubClass.class).get(0).getSuperInt());
+    }
+
+    @Test
+    public void testArray() {
+        testMongirl.store(new ExampleArrayClass());
+        testMongirl.decodeAll(ExampleArrayClass.class);
     }
 }

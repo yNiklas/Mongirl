@@ -343,6 +343,18 @@ public class Mongirl {
                             });
                             document.append(createStoreKey(field), encoded);
                         }
+                    } else if (field.getType().isArray()) {
+                        List<Object> encoded = new ArrayList<>();
+                        for (int i = 0; i < Array.getLength(field.get(storageObject)); i++) {
+                            if (Array.get(field.get(storageObject), i) == null) {
+                                encoded.add(null);
+                            } else if (isMongoPrimitive(Array.get(field.get(storageObject), i).getClass())) {
+                                encoded.add(Array.get(field.get(storageObject), i));
+                            } else {
+                                encoded.add(store(Array.get(field.get(storageObject), i)));
+                            }
+                        }
+                        document.append(createStoreKey(field), encoded);
                     } else {
                         document.append(createStoreKey(field), store(field.get(storageObject), storedObjects, postTasks));
                     }
@@ -425,7 +437,13 @@ public class Mongirl {
             }
         } else if (currentInspectionObject instanceof Iterable) {
             // List/Set/Array handling
-            if (isClass(field.getType(), List.class)) {
+            if (field.getType().isArray()) {
+                List<Object> decoded = new ArrayList<>();
+                ((Iterable<Object>) currentInspectionObject).forEach(arrayItem -> {
+                    decoded.add(parse(arrayItem, null, seenIds, decodedObjs, postTasks));
+                });
+                field.set(emptyInstance, decoded.toArray());
+            } else if (isClass(field.getType(), List.class)) {
                 List<Object> list = new ArrayList<>();
 
                 if (field.getGenericType() instanceof ParameterizedType) {
@@ -453,8 +471,6 @@ public class Mongirl {
                 }
 
                 field.set(emptyInstance, set);
-            } else if (currentInspectionObject.getClass().isArray()) {
-                // todo: implement
             }
         }
     }
