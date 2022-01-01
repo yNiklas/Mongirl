@@ -4,14 +4,20 @@ Mongirl stores Java objects to MongoDBs.
 ```java
 @Store(collection = "myMongoCollection")
 class Example {
- @StoreWith(key = "privId") private int id = 42;
- @StoreWith public String username = "Panda";
- @StoreWith private SubExample subEx = new SubExample();
+   @StoreWith(key = "privId")
+   private int id = 42;
+ 
+   @StoreWith
+   public String username = "Panda";
+ 
+   @StoreWith
+   private SubExample subEx = new SubExample();
 }
 
 @Store(collection = "subobjects")
 class SubExample {
- @StoreWith private String foo = "bar";
+   @StoreWith
+   private String foo = "bar";
 }
 ```
 ... will result in the database entries:
@@ -38,7 +44,7 @@ To connect Mongirl to a MongoDB secured by credentials, use:
 ```new Mongirl(host, port, dbName, username, authDB, password)```
 while the parameters are:
 + host: String     | Host IP adress of the MongoDB. ``localhost`` is a valid value
-+ port: int        | The Port of the MongoDB. Default value for MongoDBs are ``27017``
++ port: int        | The Port of the MongoDB. Default value for MongoDBs is ``27017``
 + dbName: String   | The name of the database in the MongoDB
 + username: String | The username of the MongoDB login
 + authDB: String   | The database auth. May be equal to the database name
