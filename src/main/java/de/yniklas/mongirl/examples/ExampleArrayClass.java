@@ -8,13 +8,15 @@ public class ExampleArrayClass {
     @StoreWith(equalityRequirement = true) String name = "otto";
     @StoreWith ExampleStore example = new ExampleStore("test");
 
-    @StoreWith int[] nmbrs = {1, 2};
-    @StoreWith ExampleSubObject[] enhancedArray;
+    @StoreWith public int[] nmbrs = {1, 2};
+    @StoreWith public ExampleSubObject[] enhancedArray;
 
-    public ExampleArrayClass() {
-        enhancedArray = new ExampleSubObject[5];
+    public ExampleArrayClass(int subArrLength) {
+        enhancedArray = new ExampleSubObject[subArrLength];
         for (int i = 0; i < enhancedArray.length; i++) {
             enhancedArray[i] = new ExampleSubObject("testuser" + i);
         }
     }
+
+    public ExampleArrayClass() {}
 }

@@ -6,7 +6,7 @@
 
     <groupId>de.yniklas</groupId>
     <artifactId>Mongirl</artifactId>
-    <version>1.14</version>
+    <version>1.15</version>
 
     <name>Mongirl</name>
     <description>Mongirl stores Java Objects to a Mongo Database - based on annotations</description>

@@ -3,7 +3,6 @@ import com.mongodb.ServerAddress;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.Filters;
 import de.yniklas.mongirl.Mongirl;
 import de.yniklas.mongirl.Pair;
 import de.yniklas.mongirl.examples.ExampleArrayClass;
@@ -15,12 +14,11 @@ import de.yniklas.mongirl.examples.ExampleSubClass;
 import de.yniklas.mongirl.examples.ExampleSubObject;
 import de.yniklas.mongirl.examples.ExampleSuperclass;
 import org.bson.BsonObjectId;
-import org.bson.conversions.Bson;
-import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,11 +37,22 @@ public class MongirlTests {
 
         MongoClient client = MongoClients.create(settings);
         DB = client.getDatabase("test");
+        DB.drop();
     }
 
     @Test
     public void testInsertOne() {
-        assertEquals(((ObjectId) testMongirl.store(new ExampleFolded("12. test"))).toString(), "619ffac06d45b90686db4bcc");
+        testMongirl.store(new ExampleFolded("testInsertOne"));
+        List<ExampleFolded> exampleFoldeds = testMongirl.decodeAll(ExampleFolded.class);
+
+        ExampleFolded eq = null;
+        for (ExampleFolded exampleFolded : exampleFoldeds) {
+            if (exampleFolded.sub.haha.equals("testInsertOne")) {
+                eq = exampleFolded;
+            }
+        }
+
+        assertNotNull(eq);
     }
 
     @Test
@@ -53,9 +62,17 @@ public class MongirlTests {
 
     @Test
     public void testFolded() {
-        Bson id = Filters.eq("_id", new ObjectId("60bfa25f2a7366644ff06f89"));
-        ExampleFolded folded = testMongirl.decodeTo(ExampleFolded.class, (ObjectId) DB.getCollection("folded").find(id).first().get("_id"));
-        assertEquals(folded.subs.get(1).haha, "soos");
+        testMongirl.store(new ExampleFolded("testFolded"));
+        List<ExampleFolded> exampleFoldeds = testMongirl.decodeAll(ExampleFolded.class);
+
+        ExampleFolded eq = null;
+        for (ExampleFolded exampleFolded : exampleFoldeds) {
+            if (exampleFolded.subs.size() >= 2 && exampleFolded.subs.get(1).haha.equals("testFolded")) {
+                eq = exampleFolded;
+            }
+        }
+
+        assertNotNull(eq);
     }
 
     @Test
@@ -81,8 +98,8 @@ public class MongirlTests {
 
     @Test
     public void testEnum() {
-        testMongirl.store(new ExampleEnum());
-        assertEquals(testMongirl.decodeFromFilters(ExampleEnum.class, new Pair("id", 6)).tip.toString(), "TYPO2");
+        testMongirl.store(new ExampleEnum(6));
+        assertEquals("TYPO2", testMongirl.decodeFromFilters(ExampleEnum.class, new Pair("id", 6)).tip.toString());
     }
 
     @Test
@@ -95,7 +112,12 @@ public class MongirlTests {
 
     @Test
     public void testArray() {
-        testMongirl.store(new ExampleArrayClass());
-        testMongirl.decodeAll(ExampleArrayClass.class);
+        testMongirl.store(new ExampleArrayClass(5));
+        List<ExampleArrayClass> exampleArrayClasses = testMongirl.decodeAll(ExampleArrayClass.class);
+
+        assertEquals(1, exampleArrayClasses.size());
+        assertEquals(2, exampleArrayClasses.get(0).nmbrs[1]);
+        assertEquals(5, exampleArrayClasses.get(0).enhancedArray.length);
+        assertEquals("testuser0", exampleArrayClasses.get(0).enhancedArray[0].haha);
     }
 }

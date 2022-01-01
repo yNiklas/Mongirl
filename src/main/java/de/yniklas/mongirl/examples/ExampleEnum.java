@@ -7,4 +7,10 @@ import de.yniklas.mongirl.StoreWith;
 public class ExampleEnum {
     @StoreWith(equalityRequirement = true) public int id = 6;
     @StoreWith public ExampleEnumEnum tip = ExampleEnumEnum.TYPO2;
+
+    public ExampleEnum(int id) {
+        this.id = id;
+    }
+
+    public ExampleEnum() {}
 }

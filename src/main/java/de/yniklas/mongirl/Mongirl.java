@@ -137,7 +137,7 @@ public class Mongirl {
     }
 
     /**
-     * Evaluates whether a object is stored based on its equal relevant attributes and, if so,
+     * Evaluates whether an object is stored based on its equal relevant attributes and, if so,
      * returns its {@code ObjectId}.
      *
      * @param storageObject the object to get the {@code ObjectId} from
@@ -438,11 +438,21 @@ public class Mongirl {
         } else if (currentInspectionObject instanceof Iterable) {
             // List/Set/Array handling
             if (field.getType().isArray()) {
-                List<Object> decoded = new ArrayList<>();
-                ((Iterable<Object>) currentInspectionObject).forEach(arrayItem -> {
-                    decoded.add(parse(arrayItem, null, seenIds, decodedObjs, postTasks));
-                });
-                field.set(emptyInstance, decoded.toArray());
+                // Determine length to instantiate array
+                Iterable<Object> dbEntry = (Iterable<Object>) currentInspectionObject;
+                int length = 0;
+                for (Object o : dbEntry) {
+                    length++;
+                }
+
+                // Create array and copy content from the db entry
+                Object arr = Array.newInstance(field.getType().getComponentType(), length);
+                int i = 0;
+                for (Object arrayItem : dbEntry) {
+                    Array.set(arr, i++, parse(arrayItem, field.getType().getComponentType(), seenIds, decodedObjs, postTasks));
+                }
+
+                field.set(emptyInstance, arr);
             } else if (isClass(field.getType(), List.class)) {
                 List<Object> list = new ArrayList<>();
 
@@ -536,70 +546,6 @@ public class Mongirl {
             }
         }
         return equalityRequirements;
-    }
-
-    @Deprecated
-    public static void encode(Object toEncode, BsonWriter writer, EncoderContext encoderContext) {
-        writer.writeStartDocument();
-
-        for (Field field : getFields(toEncode)) {
-            if (isStored(field)) {
-                try {
-                    if (field.getType().equals(ObjectId.class)) {
-                        writer.writeObjectId(createStoreKey(field), (ObjectId) field.get(toEncode));
-                    } else if (field.getType().equals(String.class)) {
-                        writer.writeString(createStoreKey(field), (String) field.get(toEncode));
-                    } else if (field.getType().equals(Integer.class) || field.getType().equals(int.class)
-                            || field.getType().equals(short.class) || field.getType().equals(Short.class)) {
-                        writer.writeInt32(createStoreKey(field), (Integer) field.get(toEncode));
-                    } else if (field.getType().equals(Long.class) || field.getType().equals(long.class)) {
-                        writer.writeInt64(createStoreKey(field), (Long) field.get(toEncode));
-                    } else if (field.getType().equals(boolean.class) || field.getType().equals(Boolean.class)) {
-                        writer.writeBoolean(createStoreKey(field), (Boolean) field.get(toEncode));
-                    } else if (field.getType().equals(double.class) || field.getType().equals(Double.class)
-                            || field.getType().equals(float.class) || field.getType().equals(Float.class)) {
-                        writer.writeDouble(createStoreKey(field), (Double) field.get(toEncode));
-                    } else if (field.getType().equals(char.class) || field.getType().equals(Character.class)) {
-                        writer.writeString(createStoreKey(field), String.valueOf(field.get(toEncode)));
-                    } else if (field.getType().isArray()) {
-                        writer.writeStartArray();
-                        for (int i = 0; i < Array.getLength(field.get(toEncode)); i++) {
-                            encode(Array.get(field.get(toEncode), i), writer, encoderContext);
-                        }
-                        writer.writeEndArray();
-                    } else if (field.getType().equals(List.class)) {
-                        writer.writeStartArray();
-                        ((List) field.get(toEncode)).forEach(item -> {
-                            encode(item, writer, encoderContext);
-                        });
-                        writer.writeEndArray();
-                    }
-                } catch (IllegalAccessException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-        writer.writeEndDocument();
-    }
-
-    @Deprecated
-    public static <T> T decode(Class<T> toDecode, BsonReader reader, DecoderContext decoderContext) {
-        reader.readStartDocument();
-
-        ConstructorList constructorList = new ConstructorList();
-        for (Field field : getFields(toDecode)) {
-            constructorList.addPair(new ConstructorPair(reader, field, decoderContext));
-        }
-        reader.readEndDocument();
-
-        try {
-            return toDecode.getConstructor(constructorList.getConstructorClasses()).newInstance((Object) constructorList.getConstructObjects());
-        } catch (InvocationTargetException | InstantiationException
-                | IllegalAccessException | NoSuchMethodException e) {
-            e.printStackTrace();
-        }
-
-        return null;
     }
 
     private static boolean isStored(Field field) {
