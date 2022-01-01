@@ -11,6 +11,4 @@ public class ExampleEnum {
     public ExampleEnum(int id) {
         this.id = id;
     }
-
-    public ExampleEnum() {}
 }

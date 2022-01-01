@@ -19,13 +19,4 @@ public class ExampleStore {
     public ExampleStore(String id) {
         this.superSuperIdentifier = id;
     }
-
-    public ExampleStore(String superSuperIdentifier, String x, ExampleSubObject subsub) {
-        this.superSuperIdentifier = superSuperIdentifier;
-        this.x = x;
-        this.subsub = subsub;
-    }
-
-    public ExampleStore() {
-    }
 }

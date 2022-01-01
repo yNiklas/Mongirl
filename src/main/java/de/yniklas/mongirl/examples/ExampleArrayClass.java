@@ -17,6 +17,4 @@ public class ExampleArrayClass {
             enhancedArray[i] = new ExampleSubObject("testuser" + i);
         }
     }
-
-    public ExampleArrayClass() {}
 }

@@ -8,12 +8,11 @@ public class ExampleSubObject {
     @StoreWith(equalityRequirement = true)
     public String haha = "muhaha2";
 
-    public ExampleSubObject() {
-    }
-
     public ExampleSubObject(String haha) {
         this.haha = haha;
     }
+
+    public ExampleSubObject() {}
 
     @Override
     public String toString() {

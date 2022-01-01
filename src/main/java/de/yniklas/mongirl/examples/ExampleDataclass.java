@@ -12,9 +12,6 @@ public class ExampleDataclass {
         this.id = id;
     }
 
-    public ExampleDataclass() {
-    }
-
     @Override
     public String toString() {
         return "ExampleDataclass{" +

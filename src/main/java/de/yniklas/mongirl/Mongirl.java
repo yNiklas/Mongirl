@@ -10,28 +10,14 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import de.yniklas.mongirl.exception.MongirlDecodeException;
 import de.yniklas.mongirl.exception.MongirlStoreException;
-import org.bson.BsonReader;
-import org.bson.BsonWriter;
 import org.bson.Document;
 import org.bson.UuidRepresentation;
-import org.bson.codecs.DecoderContext;
-import org.bson.codecs.EncoderContext;
 import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
-import java.lang.reflect.Array;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.ParameterizedType;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.lang.reflect.*;
+import java.util.*;
 
 /**
  * Mongirl let you store Java objects to a MongoDB and decodes them for you back to Java Objects.
@@ -389,7 +375,34 @@ public class Mongirl {
                 realClass = (Class<T>) Class.forName((String) document.get("classpath"));
             }
 
-            T emptyInstance = realClass.getConstructor().newInstance();
+            // Specify constructor to use
+            Constructor<T> targetConstructor = null;
+            if (realClass.getConstructors().length == 0) {
+                throw new MongirlDecodeException(String.format(MongirlDecodeException.NO_CONSTRICTOR, realClass.getName()));
+            } else {
+                targetConstructor = (Constructor<T>) realClass.getConstructors()[0];
+            }
+
+            // Create parameters list with default values
+            List<Object> args = new LinkedList<>();
+            for (Class<?> parameterType : realClass.getConstructors()[0].getParameterTypes()) {
+                if (parameterType.equals(boolean.class)) {
+                    args.add(false);
+                } else if (parameterType.equals(byte.class) || parameterType.equals(short.class)
+                        || parameterType.equals(int.class) || parameterType.equals(long.class)) {
+                    args.add(0);
+                } else if (parameterType.equals(float.class)) {
+                    args.add(0.0f);
+                } else if (parameterType.equals(double.class)) {
+                    args.add(0.0);
+                } else if (parameterType.equals(char.class)) {
+                    args.add('\u0000');
+                } else {
+                    args.add(null);
+                }
+            }
+
+            T emptyInstance = targetConstructor.newInstance(args.toArray());
 
             // Reflect all stored attributes
             for (Field field : getFields(realClass)) {
@@ -403,8 +416,6 @@ public class Mongirl {
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException | ClassNotFoundException e) {
             e.printStackTrace();
             return null;
-        } catch (NoSuchMethodException e) {
-            throw new MongirlDecodeException(String.format(MongirlDecodeException.NO_DEFAULT_CONSTRICTOR, realClass.getName()));
         }
     }
 
@@ -562,6 +573,7 @@ public class Mongirl {
                 && clazz.getAnnotation(Dataclass.class) == null) {
             return null;
         }
+
 
         if (clazz.getAnnotation(Store.class) != null) {
             return clazz.getAnnotation(Store.class).collection();

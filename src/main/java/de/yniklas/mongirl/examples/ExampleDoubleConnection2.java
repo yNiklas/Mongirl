@@ -13,10 +13,6 @@ public class ExampleDoubleConnection2 {
         this.connection1 = connection1;
     }
 
-    public ExampleDoubleConnection2() {
-        superID = (int) (Math.random() * 1000);
-    }
-
     @Override
     public String toString() {
         return "ExampleDoubleConnection2{" +

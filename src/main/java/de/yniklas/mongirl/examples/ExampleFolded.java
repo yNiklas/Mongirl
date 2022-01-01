@@ -14,8 +14,6 @@ public class ExampleFolded {
 
     @StoreWith public List<ExampleSubObject> subs;
 
-    public ExampleFolded() {}
-
     public ExampleFolded(String subString) {
         this.idd = String.valueOf(id_counter);
         this.sub = new ExampleSubObject(subString);
