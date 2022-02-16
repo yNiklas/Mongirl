@@ -1,5 +1,5 @@
 # Mongirl💾- The Java-Object storing for MongoDB
-Mongirl stores Java objects to MongoDBs.
+Mongirl stores Java objects annotation-based to MongoDBs, so you never need to write codecs again.
 > Take a look at this example:
 ```java
 @Store(collection = "myMongoCollection")
@@ -117,6 +117,12 @@ Decodes all objects stored in the MongoDB from the collection named in the annot
 Returns them in a `List`.
 
 ## Important notes
+### Constructors
+ + Every class from which objects should be stored **must** have a public constructor. It does not matter whether it's a default constructor or some with parameters. Without, Mongirl cannot instantiate this class objects on decode operations.
+
+### Arrays
+ + Currently, only one-dimensional Arrays are supported
+
 ### Interfaces implementations
  + ```addClasspath``` is an optional attribute for ```@Store``` for classes implementing an Interface or subclasses. It avoids issues on decoding to these classes.
  + By v1.12 - Mongirl will automatically annotate interface implementations and subclasses
