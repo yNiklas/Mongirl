@@ -29,6 +29,12 @@ public class Mongirl {
     private final MongoDatabase DB;
 
     /**
+     * With RAM_MODE enabled, {@link MongirlList}s don't hold all objects in RAM.
+     * See {@link MongirlList} for more information.
+     */
+    public boolean ramMode = false;
+
+    /**
      * Creates a {@code Mongirl} instance without any credentials or authentication.
      *
      * @param host the host address of the database
@@ -137,6 +143,10 @@ public class Mongirl {
             return null;
         }
 
+        if (collection(storageObject.getClass()) == null) {
+            return null;
+        }
+
         MongoCollection<Document> collection = DB.getCollection(collection(storageObject.getClass()));
         Document foundDoc = collection.find(Filters.and(equalityRequirements)).first();
 
@@ -193,6 +203,10 @@ public class Mongirl {
      * @return a {@link List} with all decoded objects
      */
     public <T> List<T> decodeAll(Class<T> targetClass) {
+        return decodeAll(targetClass, List.of());
+    }
+
+    public <T> List<T> decodeAll(Class<T> targetClass, Collection<ObjectId> blackList) {
         if (collection(targetClass) == null) {
             return null;
         }
@@ -201,14 +215,16 @@ public class Mongirl {
 
         MongoCollection<Document> collection = DB.getCollection(collection(targetClass));
         for (Document document : collection.find()) {
-            decodedObjects.add(decodeTo(targetClass, document.getObjectId("_id")));
+            if (!blackList.contains(document.getObjectId("_id"))) {
+                decodedObjects.add(decodeTo(targetClass, document.getObjectId("_id")));
+            }
         }
 
         return decodedObjects;
     }
 
     /**
-     * Decodes a object stored in the database with the given {@code ObjectId}.
+     * Decodes an object stored in the database with the given {@code ObjectId}.
      *
      * @param targetClass the {@code Class} of the decoded object
      * @param _id the {@code ObjectId} of the database document to decode
@@ -568,7 +584,7 @@ public class Mongirl {
                 || field.getDeclaringClass().getAnnotation(Dataclass.class) != null;
     }
 
-    private static String collection(Class<?> clazz) {
+    static String collection(Class<?> clazz) {
         if (clazz.getAnnotation(Store.class) == null
                 && clazz.getAnnotation(Dataclass.class) == null) {
             return null;
@@ -634,5 +650,9 @@ public class Mongirl {
         }
 
         return false;
+    }
+
+    MongoDatabase getDB() {
+        return DB;
     }
 }

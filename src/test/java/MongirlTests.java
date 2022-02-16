@@ -16,8 +16,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class MongirlTests {
-    private static Mongirl testMongirl;
-    private static MongoDatabase DB;
+    public static Mongirl testMongirl;
+    public static MongoDatabase DB;
 
     @BeforeAll
     public static void initDB() {
