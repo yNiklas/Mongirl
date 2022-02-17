@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class MongirlListTests {
     @BeforeAll
@@ -46,6 +47,40 @@ public class MongirlListTests {
         list.add(newEntry);
         assertEquals(1, list.size());
         assertEquals("testAddff", list.get(0).superSuperIdentifier);
+    }
+
+    @Test
+    public void testRemove() {
+        for (int i = 0; i < 4; i++) {
+            MongirlTests.testMongirl.store(new ExampleStore(String.valueOf(i)));
+        }
+        ExampleStore es = new ExampleStore("4");
+        MongirlTests.testMongirl.store(es);
+
+        MongirlList<ExampleStore> list = new MongirlList<>(MongirlTests.testMongirl, ExampleStore.class, true, true);
+        int currentSize = list.size();
+        list.remove(es);
+        assertEquals(currentSize - 1, list.size());
+        assertEquals("3", list.get(list.size() - 1).superSuperIdentifier);
+
+        list = new MongirlList<>(MongirlTests.testMongirl, ExampleStore.class, true, false);
+        currentSize = list.size();
+        assertTrue(list.contains(es));
+        list.remove(es);
+        assertEquals(currentSize - 1, list.size());
+        assertEquals("3", list.get(list.size() - 1).superSuperIdentifier);
+
+        list = new MongirlList<>(MongirlTests.testMongirl, ExampleStore.class, false, true);
+        list.add(es);
+        assertEquals(1, list.size());
+        list.remove(es);
+        assertEquals(0, list.size());
+
+        list = new MongirlList<>(MongirlTests.testMongirl, ExampleStore.class, false, false);
+        list.add(es);
+        assertEquals(1, list.size());
+        list.remove(es);
+        assertEquals(0, list.size());
     }
 
     @Test
@@ -98,6 +133,57 @@ public class MongirlListTests {
         });
     }
 
+    @Test
+    public void testPerformance() {
+        for (int i = 0; i < 2000; i++) {
+            MongirlTests.testMongirl.store(new ExampleStore(String.valueOf(i)));
+        }
+
+        long memInitial, startTime;
+
+        memInitial = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        MongirlList<ExampleStore> fastList = new MongirlList<>(MongirlTests.testMongirl, ExampleStore.class, true, false);
+        long memFastList = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory() - memInitial;
+
+        int sum1 = 0;
+        startTime = System.currentTimeMillis();
+        for (ExampleStore exampleStore : fastList) {
+            sum1 += Integer.parseInt(exampleStore.superSuperIdentifier);
+        }
+        long durationFastList = System.currentTimeMillis() - startTime;
+
+        memInitial = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        MongirlList<ExampleStore> memoryLessList = new MongirlList<>(MongirlTests.testMongirl, ExampleStore.class, true, true);
+        long memMemLessList = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory() - memInitial;
+
+        int sum2 = 0;
+        startTime = System.currentTimeMillis();
+        for (ExampleStore exampleStore : memoryLessList) {
+            sum2 += Integer.parseInt(exampleStore.superSuperIdentifier);
+        }
+        long durationMemLessList = System.currentTimeMillis() - startTime;
+
+        assertEquals(sum1, sum2);
+
+        String mflStr = String.valueOf(memFastList / 1000000.);
+        String mmllStr = String.valueOf(memMemLessList / 1000000.);
+
+        System.out.println("+ List type  + RAM [MB]      + Time [ms]     +");
+        System.out.println("+ Fast List  + " + mflStr + fillWithSpaces(13 - mflStr.length()) + " + "
+                + durationFastList + fillWithSpaces(13 - String.valueOf(durationFastList).length()) + " +");
+        System.out.println("+ Space List + " + mmllStr + fillWithSpaces(13 - mmllStr.length()) + " + "
+                + durationMemLessList + fillWithSpaces(13 - String.valueOf(durationMemLessList).length()) + " +");
+
+        assertTrue(durationFastList < durationMemLessList);
+        assertTrue(memMemLessList < memFastList);
+    }
+
+    private String fillWithSpaces(int n) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(" ".repeat(Math.max(0, n)));
+        return builder.toString();
+    }
+
     @BeforeEach
     public void cleanDB() {
         clearUpDB();
@@ -105,6 +191,6 @@ public class MongirlListTests {
 
     @AfterAll
     public static void clearUpDB() {
-        MongirlTests.DB.drop();
+        MongirlTests.cleanUp();
     }
 }

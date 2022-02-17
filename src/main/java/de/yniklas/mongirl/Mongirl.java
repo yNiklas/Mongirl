@@ -249,6 +249,53 @@ public class Mongirl {
         return decoded;
     }
 
+    /**
+     * Evaluates whether two objects are equal for Mongirl.
+     * More precious, whether all equality requirement fields are equal.
+     * areMongoEqual(null, null) will return true.
+     *
+     * @param a the first comparison object
+     * @param b the second comparison object
+     * @return whether both are equal for Mongirl
+     */
+    public static boolean areMongoEqual(Object a, Object b) {
+        if (a == null) {
+            return b == null;
+        } else if (a.equals(b)) {
+            return true;
+        }
+
+        List<Field> fieldsA = getFields(a);
+        List<Field> fieldsB = getFields(b);
+
+        if (fieldsA.size() != fieldsB.size()) {
+            return false;
+        }
+
+        for (Field field : getFields(a)) {
+            field.trySetAccessible();
+            try {
+                if (isEqualRelevant(field) && isMongoPrimitive(field.getType())) {
+                    Object valueA = field.get(a);
+                    Object valueB = field.get(b);
+
+                    if ((valueA == null && valueB != null) || (valueA != null && valueB == null)) {
+                        return false;
+                    }
+
+                    if (valueA != null) {
+                        if (!valueA.equals(valueB)) {
+                            return false;
+                        }
+                    }
+                }
+            } catch (IllegalArgumentException | IllegalAccessException e) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private Object store(Object storageObject, List<Object> alreadyStored, List<PostStoreTask> postTasks) {
         if (collection(storageObject.getClass()) == null) {
             return null;
@@ -547,7 +594,7 @@ public class Mongirl {
         return null;
     }
 
-    private boolean isMongoPrimitive(Class<?> clazz) {
+    private static boolean isMongoPrimitive(Class<?> clazz) {
         return clazz.isPrimitive()
                 || clazz.equals(String.class)
                 || clazz.equals(Boolean.class)
@@ -598,7 +645,7 @@ public class Mongirl {
         }
     }
 
-    private boolean isEqualRelevant(Field field) {
+    private static boolean isEqualRelevant(Field field) {
         if (!isStored(field)) {
             return false;
         }

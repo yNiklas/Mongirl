@@ -7,6 +7,8 @@ import de.yniklas.mongirl.Mongirl;
 import de.yniklas.mongirl.Pair;
 import de.yniklas.mongirl.examples.*;
 import org.bson.BsonObjectId;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -50,7 +52,8 @@ public class MongirlTests {
 
     @Test
     public void testDecode() {
-        assertEquals(testMongirl.decodeAll(ExampleFolded.class).get(0).idd, "28");
+        testMongirl.store(new ExampleFolded("28"));
+        assertEquals(testMongirl.decodeAll(ExampleFolded.class).get(0).sub.haha, "28");
     }
 
     @Test
@@ -112,5 +115,25 @@ public class MongirlTests {
         assertEquals(2, exampleArrayClasses.get(0).nmbrs[1]);
         assertEquals(5, exampleArrayClasses.get(0).enhancedArray.length);
         assertEquals("testuser0", exampleArrayClasses.get(0).enhancedArray[0].haha);
+    }
+
+    @Test
+    public void testMongoEquality() {
+        ExampleStore item = new ExampleStore("0");
+        testMongirl.store(item);
+
+        // Objects are only mongo-equal since the decode operation creates a new instance with the same attribute values.
+        assertNotEquals(item, testMongirl.decodeAll(ExampleStore.class).get(0));
+        assertTrue(Mongirl.areMongoEqual(testMongirl.decodeAll(ExampleStore.class).get(0), item));
+    }
+
+    @AfterEach
+    public void clearDB() {
+        cleanUp();
+    }
+
+    @AfterAll
+    public static void cleanUp() {
+        DB.drop();
     }
 }

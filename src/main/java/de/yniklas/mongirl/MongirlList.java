@@ -95,7 +95,12 @@ public class MongirlList<T> implements List<T> {
                 return ramModeList.contains(id);
             }
         } else {
-            return objectHold.contains(o);
+            for (T item : objectHold) {
+                if (Mongirl.areMongoEqual(item, o)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -213,7 +218,7 @@ public class MongirlList<T> implements List<T> {
     }
 
     /**
-     * Adds an element to the MongirlList.
+     * Adds an element to the MongirlList if the list doesn't already contains it.
      * Note, that if the List operates in RAM mode, this operation does nothing.
      * Note, that this operation doesn't store the object.
      *
@@ -222,6 +227,10 @@ public class MongirlList<T> implements List<T> {
      */
     @Override
     public boolean add(T t) {
+        if (contains(t)) {
+            return true;
+        }
+
         if (ramMode) {
             ObjectId id = mongirl.getObjectIdFrom(t);
 
@@ -234,7 +243,8 @@ public class MongirlList<T> implements List<T> {
                 return ramModeList.add(id);
             }
         } else {
-            return objectHold.add(t);
+            objectHold.add(t);
+            return true;
         }
     }
 
@@ -259,7 +269,12 @@ public class MongirlList<T> implements List<T> {
                 return ramModeList.remove(id);
             }
         } else {
-            return objectHold.remove(o);
+            for (T t : objectHold) {
+                if (Mongirl.areMongoEqual(t, o)) {
+                    return objectHold.remove(t);
+                }
+            }
+            return false;
         }
     }
 
@@ -279,42 +294,30 @@ public class MongirlList<T> implements List<T> {
 
     @Override
     public boolean addAll(Collection<? extends T> c) {
-        if (ramMode) {
-            for (T item : c) {
-                add(item);
-            }
-            return true;
-        } else {
-            return objectHold.addAll(c);
+        for (T item : c) {
+            add(item);
         }
+        return true;
     }
 
     @Override
     public boolean addAll(int index, Collection<? extends T> c) {
-        if (ramMode) {
-            int idxCounter = 0;
-            for (T t : c) {
-                add(index+idxCounter, t);
-                idxCounter++;
-            }
-            return c.size() > 0;
-        } else {
-            return addAll(index, c);
+        int idxCounter = 0;
+        for (T t : c) {
+            add(index+idxCounter, t);
+            idxCounter++;
         }
+        return c.size() > 0;
     }
 
     @Override
     public boolean removeAll(Collection<?> c) {
-        if (ramMode) {
-            for (Object item : c) {
-                if (!remove(item)) {
-                    return false;
-                }
+        for (Object item : c) {
+            if (!remove(item)) {
+                return false;
             }
-            return true;
-        } else {
-            return objectHold.removeAll(c);
         }
+        return true;
     }
 
     @Override
@@ -322,6 +325,9 @@ public class MongirlList<T> implements List<T> {
         return false;
     }
 
+    /**
+     * Clears the list but does not delete the DB entries itself.
+     */
     @Override
     public void clear() {
         if (ramMode) {
@@ -421,7 +427,11 @@ public class MongirlList<T> implements List<T> {
 
     /**
      * Indexes on MongirlLists with blacklists in RAM mode aren't implemented correctly.
-     * In this case, the element is just added as in {@link MongirlList#add}
+     * In this case, the element is just added as in {@link MongirlList#add}.
+     *
+     * Note, that this method - similar to {@link MongirlList#add} - doesn't allow
+     * a duplicate in the list. In the case that the element is already in, this method
+     * will remove it before adding to the given index.
      *
      * @param index the target index
      * @param element the element to add
@@ -432,9 +442,14 @@ public class MongirlList<T> implements List<T> {
             if (isRamModeListBlacklist) {
                 add(element);
             } else {
+                ObjectId id = mongirl.getObjectIdFrom(element);
+                ramModeList.remove(id);
                 ramModeList.add(index, mongirl.getObjectIdFrom(element));
             }
         } else {
+            if (contains(element)) {
+                remove(element);
+            }
             objectHold.add(index, element);
         }
     }
@@ -485,21 +500,38 @@ public class MongirlList<T> implements List<T> {
                 MongoCollection<Document> collection = mongirl.getDB().getCollection(Mongirl.collection(targetClass));
                 int idx = 0;
                 for (Document document : collection.find()) {
+                    if (ramModeList.contains(document.getObjectId("_id"))) {
+                        continue;
+                    }
+
                     if (id.equals(document.getObjectId("_id"))) {
                         return idx;
-                    } else {
-                        idx++;
                     }
+                    idx++;
                 }
                 return -1;
             } else {
                 return ramModeList.indexOf(id);
             }
         } else {
-            return objectHold.indexOf(o);
+            int idx = 0;
+            for (T t : objectHold) {
+                if (Mongirl.areMongoEqual(t, o)) {
+                    return idx;
+                }
+                idx++;
+            }
+            return -1;
         }
     }
 
+    /**
+     * As every element can only be once in the list, the method probably return the same
+     * as {@link MongirlList#indexOf}.
+     *
+     * @param o the object to get the last occurrences index from
+     * @return the index of the last occurrence of the given object
+     */
     @Override
     public int lastIndexOf(Object o) {
         if (ramMode) {
@@ -517,17 +549,29 @@ public class MongirlList<T> implements List<T> {
                 int idx = 0;
                 int lastIndex = -1;
                 for (Document document : collection.find()) {
+                    if (ramModeList.contains(document.getObjectId("_id"))) {
+                        continue;
+                    }
+
                     if (id.equals(document.getObjectId("_id"))) {
                         lastIndex = idx;
-                        idx++;
                     }
+                    idx++;
                 }
                 return lastIndex;
             } else {
                 return ramModeList.lastIndexOf(id);
             }
         } else {
-            return objectHold.lastIndexOf(o);
+            int idx = 0;
+            int lastIndex = -1;
+            for (T t : objectHold) {
+                if (Mongirl.areMongoEqual(t, o)) {
+                    lastIndex = idx;
+                }
+                idx++;
+            }
+            return lastIndex;
         }
     }
 
